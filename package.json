@@ -1,0 +1,19 @@
+{
+  "name": "airdlivers-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "fs-extra": "^11.1.1",
+    "moment": "^2.29.4",
+    "mongodb": "^5.9.1",
+    "node-telegram-bot-api": "^0.61.0"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}

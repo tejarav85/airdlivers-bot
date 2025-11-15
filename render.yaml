@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: airdlivers-bot
+    env: node
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "node bot.js"
+    autoDeploy: true
+    branch: main
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_GROUP_ID
+        sync: false
+      - key: SUPER_ADMIN_ID
+        sync: false
+      - key: ADMIN_PIN
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB_NAME
+        sync: false
+      - key: SUPPORT_LINK
+        sync: false
