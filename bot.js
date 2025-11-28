@@ -92,7 +92,9 @@ function normalizeAirportName(str = '') {
 }
 
 function airportsMatch(a, b) {
-    return normalizeAirportName(a) && normalizeAirportName(a) === normalizeAirportName(b);
+    const na = normalizeAirportName(a);
+    const nb = normalizeAirportName(b);
+    return na && nb && na === nb;
 }
 
 function isWeightCompatible(senderWeight, travelerWeight) {
@@ -233,14 +235,41 @@ const mainMenuInline = {
 
 // ---------- MATCHING HELPERS (auto-matching + private chat) ----------
 
+// Validation helpers for old / incomplete docs (Option B: skip, do not delete)
+function canBuildSenderSnapshot(doc) {
+    const d = doc?.data || {};
+    if (!d.pickup || !d.destination || d.weight == null || !d.sendDate) {
+        console.warn('⚠️ Skipping sender for matching due to missing fields:', {
+            requestId: doc?.requestId,
+            hasData: !!doc?.data
+        });
+        return false;
+    }
+    return true;
+}
+
+function canBuildTravelerSnapshot(doc) {
+    const d = doc?.data || {};
+    if (!d.departure || !d.destination || d.availableWeight == null || !d.departureTime) {
+        console.warn('⚠️ Skipping traveler for matching due to missing fields:', {
+            requestId: doc?.requestId,
+            hasData: !!doc?.data
+        });
+        return false;
+    }
+    return true;
+}
+
+// create a simple match-friendly snapshot (SAFE)
 function buildSenderSnapshot(doc) {
+    const d = doc?.data || {};
     return {
         requestId: doc.requestId,
-        pickup: doc.data.pickup,
-        destination: doc.data.destination,
-        weight: doc.data.weight,
-        sendDate: doc.data.sendDate,
-        arrivalDate: doc.data.arrivalDate,
+        pickup: d.pickup || '',
+        destination: d.destination || '',
+        weight: d.weight ?? null,
+        sendDate: d.sendDate || '',
+        arrivalDate: d.arrivalDate || '',
         status: doc.status || 'Pending',
         matchLocked: !!doc.matchLocked,
         pendingMatchWith: doc.pendingMatchWith || null
@@ -248,27 +277,21 @@ function buildSenderSnapshot(doc) {
 }
 
 function buildTravelerSnapshot(doc) {
-    if (!doc || !doc.data) return null;
-
-    // Prevent matching with broken entries
-    if (!doc.data.departure || !doc.data.destination || !doc.data.departureTime) {
-        console.warn("⚠ Skipping incomplete traveler:", doc.requestId);
-        return null;
-    }
-
+    const d = doc?.data || {};
     return {
         requestId: doc.requestId,
-        departure: doc.data.departure,
-        destination: doc.data.destination,
-        departureTime: doc.data.departureTime,
-        arrivalTime: doc.data.arrivalTime || null,
-        availableWeight: doc.data.availableWeight || null,
+        departure: d.departure || '',
+        destination: d.destination || '',
+        departureTime: d.departureTime || '',
+        arrivalTime: d.arrivalTime || '',
+        availableWeight: d.availableWeight ?? null,
         status: doc.status || 'Pending',
         matchLocked: !!doc.matchLocked,
         pendingMatchWith: doc.pendingMatchWith || null
     };
 }
 
+// check if a sender & traveler are compatible according to your rules
 function isSenderTravelerCompatible(senderSnap, travelerSnap) {
     if (!airportsMatch(senderSnap.pickup, travelerSnap.departure)) return false;
     if (!airportsMatch(senderSnap.destination, travelerSnap.destination)) return false;
@@ -278,7 +301,9 @@ function isSenderTravelerCompatible(senderSnap, travelerSnap) {
     return true;
 }
 
+// Build suggestion text/cards
 async function sendMatchCardToSender(senderDoc, travelerDoc) {
+    if (!canBuildSenderSnapshot(senderDoc) || !canBuildTravelerSnapshot(travelerDoc)) return;
     const s = buildSenderSnapshot(senderDoc);
     const t = buildTravelerSnapshot(travelerDoc);
     if (!isSenderTravelerCompatible(s, t)) return;
@@ -329,6 +354,7 @@ async function sendMatchCardToSender(senderDoc, travelerDoc) {
 }
 
 async function sendMatchCardToTraveler(travelerDoc, senderDoc) {
+    if (!canBuildSenderSnapshot(senderDoc) || !canBuildTravelerSnapshot(travelerDoc)) return;
     const s = buildSenderSnapshot(senderDoc);
     const t = buildTravelerSnapshot(travelerDoc);
     if (!isSenderTravelerCompatible(s, t)) return;
@@ -378,11 +404,13 @@ async function sendMatchCardToTraveler(travelerDoc, senderDoc) {
     }
 }
 
+// Trigger suggestions when a request is approved
 async function triggerMatchingForRequest(role, requestId) {
     try {
         if (role === 'sender') {
             const senderDoc = await sendersCol.findOne({ requestId });
             if (!senderDoc) return;
+            if (!canBuildSenderSnapshot(senderDoc)) return;
             if (senderDoc.matchLocked || senderDoc.pendingMatchWith) return;
 
             const s = buildSenderSnapshot(senderDoc);
@@ -392,11 +420,16 @@ async function triggerMatchingForRequest(role, requestId) {
                 .find({
                     status: 'Approved',
                     matchLocked: { $ne: true },
-                    pendingMatchWith: { $in: [null, undefined] }
+                    // allow null or missing pendingMatchWith
+                    $or: [
+                        { pendingMatchWith: { $exists: false } },
+                        { pendingMatchWith: null }
+                    ]
                 })
                 .toArray();
 
             for (const trv of candidateTravelers) {
+                if (!canBuildTravelerSnapshot(trv)) continue;
                 const t = buildTravelerSnapshot(trv);
                 if (isSenderTravelerCompatible(s, t)) {
                     await sendMatchCardToSender(senderDoc, trv);
@@ -405,6 +438,7 @@ async function triggerMatchingForRequest(role, requestId) {
         } else {
             const travelerDoc = await travelersCol.findOne({ requestId });
             if (!travelerDoc) return;
+            if (!canBuildTravelerSnapshot(travelerDoc)) return;
             if (travelerDoc.matchLocked || travelerDoc.pendingMatchWith) return;
 
             const t = buildTravelerSnapshot(travelerDoc);
@@ -414,11 +448,15 @@ async function triggerMatchingForRequest(role, requestId) {
                 .find({
                     status: 'Approved',
                     matchLocked: { $ne: true },
-                    pendingMatchWith: { $in: [null, undefined] }
+                    $or: [
+                        { pendingMatchWith: { $exists: false } },
+                        { pendingMatchWith: null }
+                    ]
                 })
                 .toArray();
 
             for (const snd of candidateSenders) {
+                if (!canBuildSenderSnapshot(snd)) continue;
                 const s = buildSenderSnapshot(snd);
                 if (isSenderTravelerCompatible(s, t)) {
                     await sendMatchCardToTraveler(travelerDoc, snd);
@@ -430,6 +468,7 @@ async function triggerMatchingForRequest(role, requestId) {
     }
 }
 
+// Handle confirm/skip buttons
 async function handleMatchCallback(query) {
     const data = query.data;
     const parts = data.split('_'); // m_s_conf_sndReq_trvReq
@@ -463,6 +502,7 @@ async function handleMatchCallback(query) {
     await bot.answerCallbackQuery(query.id, { text: 'Unknown match action.' });
 }
 
+// Confirm logic (2-step handshake)
 async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserId, query) {
     try {
         const myCol = myRole === 'sender' ? sendersCol : travelersCol;
@@ -496,7 +536,9 @@ async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserI
             return;
         }
 
+        // Check if other side already confirmed with this one
         if (otherDoc.pendingMatchWith === myReqId) {
+            // second confirmation -> finalize
             await myCol.updateOne(
                 { requestId: myReqId },
                 {
@@ -536,6 +578,7 @@ async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserI
                 );
             } catch (e) { }
 
+            // notify admin
             try {
                 await bot.sendMessage(
                     String(ADMIN_GROUP_ID),
@@ -544,6 +587,7 @@ async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserI
                 );
             } catch (e) { }
 
+            // disable keyboard on the message
             try {
                 await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
                     chat_id: query.message.chat.id,
@@ -554,6 +598,7 @@ async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserI
             await bot.answerCallbackQuery(query.id, { text: 'Match confirmed ✅' });
             return;
         } else {
+            // first confirmation -> mark pending and notify other side
             await myCol.updateOne(
                 { requestId: myReqId },
                 {
@@ -565,6 +610,7 @@ async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserI
 
             await bot.answerCallbackQuery(query.id, { text: 'Confirmation sent. Waiting for other user.' });
 
+            // disable keyboard on this card to avoid double-taps
             try {
                 await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
                     chat_id: query.message.chat.id,
@@ -572,6 +618,7 @@ async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserI
                 }).catch(() => { });
             } catch (e) { }
 
+            // send a match card to other side so they can confirm/skip
             if (myRole === 'sender') {
                 await sendMatchCardToTraveler(otherDoc, myDoc);
             } else {
@@ -646,12 +693,29 @@ bot.onText(/\/privacy|\/help/, (msg) => {
     bot.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
 });
 
+// 📸 DEBUG: view any stored Telegram photo by file_id
+bot.onText(/\/getphoto (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const fileId = (match && match[1]) ? match[1].trim() : '';
+    if (!fileId) {
+        await bot.sendMessage(chatId, 'Usage: /getphoto <file_id>');
+        return;
+    }
+    try {
+        await bot.sendPhoto(chatId, fileId);
+    } catch (e) {
+        console.error('/getphoto error', e.message);
+        await bot.sendMessage(chatId, '❌ Unable to fetch photo. File may be invalid or expired.');
+    }
+});
+
 // ---------- Callback handler ----------
 bot.on('callback_query', async (query) => {
     try {
         const data = query.data;
         const chatId = query.message.chat.id;
 
+        // matching callbacks
         if (data && data.startsWith('m_')) {
             await handleMatchCallback(query);
             return;
@@ -659,6 +723,7 @@ bot.on('callback_query', async (query) => {
 
         const fromId = query.from.id;
 
+        // main flows
         if (data === 'flow_sender') return startSenderFlow(chatId);
         if (data === 'flow_traveler') return startTravelerFlow(chatId);
         if (data === 'flow_tracking') {
@@ -667,6 +732,7 @@ bot.on('callback_query', async (query) => {
         }
         if (data === 'flow_help') return showHelpMenu(chatId);
 
+        // categories
         if (data && data.startsWith('cat_')) {
             const session = userSessions[chatId];
             if (!session || session.type !== 'sender' || session.step !== 'package_category') {
@@ -684,6 +750,7 @@ bot.on('callback_query', async (query) => {
             return bot.answerCallbackQuery(query.id);
         }
 
+        // confirmations: confirm_yes_role_requestId
         if (data && data.startsWith('confirm_')) {
             const parts = data.split('_');
             if (parts.length < 4) return bot.answerCallbackQuery(query.id, { text: 'Invalid token' });
@@ -711,6 +778,7 @@ bot.on('callback_query', async (query) => {
             }
         }
 
+        // Admin actions: approve_, reject_, reason_, requestvisa_
         if (data && (data.startsWith('approve_') || data.startsWith('reject_') || data.startsWith('reason_') || data.startsWith('requestvisa_'))) {
             const invokedBy = query.from.id;
             const userIsSuper = String(invokedBy) === String(SUPER_ADMIN_ID);
@@ -802,6 +870,8 @@ bot.on('message', async (msg) => {
         const fromId = msg.from.id;
         const text = (msg.text || '').trim();
 
+        // ignore messages that are actually commands here (except we still forward for chat after checks)
+        // Admin login flow with /admin
         if (text === '/admin') {
             if (String(fromId) === String(SUPER_ADMIN_ID)) {
                 adminAuth[fromId] = { loggedIn: true, super: true, awaitingCustomReasonFor: null };
@@ -817,6 +887,7 @@ bot.on('message', async (msg) => {
             return;
         }
 
+        // admin PIN typed in admin group
         if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingPin) {
             if (text === String(ADMIN_PIN)) {
                 adminAuth[fromId] = { awaitingPin: false, loggedIn: true, super: false, awaitingCustomReasonFor: null };
@@ -828,6 +899,7 @@ bot.on('message', async (msg) => {
             return;
         }
 
+        // Admin typing custom rejection reason in admin group
         if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingCustomReasonFor) {
             const reqId = adminAuth[fromId].awaitingCustomReasonFor;
             const reasonText = text || 'Rejected by admin';
@@ -839,6 +911,7 @@ bot.on('message', async (msg) => {
         const session = userSessions[chatId];
 
         if (!session) {
+            // No active form session: treat non-command messages as chat if matched
             if (!text.startsWith('/')) {
                 const handled = await tryForwardChatMessage(chatId, text);
                 if (handled) return;
@@ -1316,6 +1389,7 @@ async function processApprove(requestId, invokedBy, query) {
 
         if (query) await bot.answerCallbackQuery(query.id, { text: 'Approved.' });
 
+        // trigger auto-matching for this request
         await triggerMatchingForRequest(found.role, requestId);
 
     } catch (err) {
@@ -1448,7 +1522,7 @@ bot.on('photo', async (msg) => {
         const fileId = msg.photo[msg.photo.length - 1].file_id;
 
         const session = userSessions[chatId];
-        if (session && session.expectingPhoto) return;
+        if (session && session.expectingPhoto) return; // handled by main photo handler
 
         const pendingVisa = await travelersCol.findOne({ userId: chatId, status: 'VisaRequested' });
         if (!pendingVisa) return;
@@ -1477,6 +1551,7 @@ bot.on('photo', async (msg) => {
 
         return;
     } catch (err) {
+        // silent
         return;
     }
 });
