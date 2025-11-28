@@ -248,13 +248,21 @@ function buildSenderSnapshot(doc) {
 }
 
 function buildTravelerSnapshot(doc) {
+    if (!doc || !doc.data) return null;
+
+    // Prevent matching with broken entries
+    if (!doc.data.departure || !doc.data.destination || !doc.data.departureTime) {
+        console.warn("⚠ Skipping incomplete traveler:", doc.requestId);
+        return null;
+    }
+
     return {
         requestId: doc.requestId,
         departure: doc.data.departure,
         destination: doc.data.destination,
         departureTime: doc.data.departureTime,
-        arrivalTime: doc.data.arrivalTime,
-        availableWeight: doc.data.availableWeight,
+        arrivalTime: doc.data.arrivalTime || null,
+        availableWeight: doc.data.availableWeight || null,
         status: doc.status || 'Pending',
         matchLocked: !!doc.matchLocked,
         pendingMatchWith: doc.pendingMatchWith || null
