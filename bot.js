@@ -1,4 +1,4 @@
-// bot.js (ES module) - AirDlivers final production
+// bot.js (ES module) - AirDlivers final production with auto-matching & private chat
 // Ensure package.json has "type": "module"
 
 import 'dotenv/config';
@@ -8,6 +8,17 @@ import { MongoClient } from 'mongodb';
 import moment from 'moment';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import express from 'express';
+
+// ---------- Keep-alive HTTP server for Render/UptimeRobot ----------
+const app = express();
+app.get('/', (req, res) => {
+    res.send('🌍 AirDlivers Bot is running!');
+});
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+    console.log(`🌍 Keep-alive server running on port ${PORT}`);
+});
 
 // ---------- __dirname compatibility ----------
 const __filename = fileURLToPath(import.meta.url);
@@ -16,8 +27,8 @@ const __dirname = dirname(__filename);
 // ---------- ENV ----------
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SUPER_ADMIN_ID = process.env.SUPER_ADMIN_ID || ''; // optional
-const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID; // required
-const ADMIN_PIN = process.env.ADMIN_PIN; // required for admin login in group
+const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;       // required
+const ADMIN_PIN = process.env.ADMIN_PIN;                 // required for admin login in group
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'airdlivers';
 
@@ -68,6 +79,36 @@ function parseDate_ddmmyy_hhmm(txt) {
     return m.isValid() ? m.toDate() : null;
 }
 function todayStart() { return moment().startOf('day').toDate(); }
+
+// --- airport + matching helpers ---
+function normalizeAirportName(str = '') {
+    return String(str || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, ' ')
+        .replace(/\s+AIRPORT\b/g, '')
+        .replace(/\s+INTL\b/g, '')
+        .replace(/\s+INTERNATIONAL\b/g, '');
+}
+
+function airportsMatch(a, b) {
+    return normalizeAirportName(a) && normalizeAirportName(a) === normalizeAirportName(b);
+}
+
+function isWeightCompatible(senderWeight, travelerWeight) {
+    if (senderWeight == null || travelerWeight == null) return false;
+    const diff = Math.abs(Number(senderWeight) - Number(travelerWeight));
+    return diff <= 2; // ±2 kg
+}
+
+function areDatesClose(senderSendDateStr, travelerDepartureStr) {
+    if (!senderSendDateStr || !travelerDepartureStr) return false;
+    const s = moment(senderSendDateStr, 'DD-MM-YYYY', true);
+    const t = moment(travelerDepartureStr, 'DD-MM-YY HH:mm', true);
+    if (!s.isValid() || !t.isValid()) return false;
+    const diffDays = Math.abs(t.startOf('day').diff(s.startOf('day'), 'days'));
+    return diffDays <= 1; // within 1 day
+}
 
 // ---------- MongoDB ----------
 let mongoClient, db, sendersCol, travelersCol, trackingCol;
@@ -135,10 +176,8 @@ function confirmKeyboard(role, requestId) {
 
 // admin action keyboard depends on role/status
 function adminActionKeyboardForDoc(doc) {
-    // doc is the DB doc containing role and status
     const rid = doc.requestId;
     if (doc.role === 'sender') {
-        // sender: only approve/reject
         return {
             reply_markup: {
                 inline_keyboard: [
@@ -147,8 +186,6 @@ function adminActionKeyboardForDoc(doc) {
             }
         };
     } else {
-        // traveler: approve / reject / request visa (if Pending)
-        // if VisaRequested state -> only approve/reject
         if (doc.status === 'VisaRequested') {
             return {
                 reply_markup: {
@@ -194,23 +231,396 @@ const mainMenuInline = {
     }
 };
 
+// ---------- MATCHING HELPERS (auto-matching + private chat) ----------
+
+function buildSenderSnapshot(doc) {
+    return {
+        requestId: doc.requestId,
+        pickup: doc.data.pickup,
+        destination: doc.data.destination,
+        weight: doc.data.weight,
+        sendDate: doc.data.sendDate,
+        arrivalDate: doc.data.arrivalDate,
+        status: doc.status || 'Pending',
+        matchLocked: !!doc.matchLocked,
+        pendingMatchWith: doc.pendingMatchWith || null
+    };
+}
+
+function buildTravelerSnapshot(doc) {
+    return {
+        requestId: doc.requestId,
+        departure: doc.data.departure,
+        destination: doc.data.destination,
+        departureTime: doc.data.departureTime,
+        arrivalTime: doc.data.arrivalTime,
+        availableWeight: doc.data.availableWeight,
+        status: doc.status || 'Pending',
+        matchLocked: !!doc.matchLocked,
+        pendingMatchWith: doc.pendingMatchWith || null
+    };
+}
+
+function isSenderTravelerCompatible(senderSnap, travelerSnap) {
+    if (!airportsMatch(senderSnap.pickup, travelerSnap.departure)) return false;
+    if (!airportsMatch(senderSnap.destination, travelerSnap.destination)) return false;
+    if (!isWeightCompatible(senderSnap.weight, travelerSnap.availableWeight)) return false;
+    if (!areDatesClose(senderSnap.sendDate, travelerSnap.departureTime)) return false;
+    if (senderSnap.matchLocked || travelerSnap.matchLocked) return false;
+    return true;
+}
+
+async function sendMatchCardToSender(senderDoc, travelerDoc) {
+    const s = buildSenderSnapshot(senderDoc);
+    const t = buildTravelerSnapshot(travelerDoc);
+    if (!isSenderTravelerCompatible(s, t)) return;
+
+    let text = `<b>🔍 Possible Traveler Match</b>\n\n`;
+    text += `<b>Your Request ID:</b> <code>${escapeHtml(s.requestId)}</code>\n`;
+    text += `<b>Route:</b> ${escapeHtml(s.pickup)} → ${escapeHtml(s.destination)}\n`;
+    text += `<b>Your Package:</b> ${escapeHtml(String(s.weight))} kg, ${escapeHtml(senderDoc.data.category || 'N/A')}\n`;
+    text += `<b>Your Send Date:</b> ${escapeHtml(s.sendDate)}\n\n`;
+
+    text += `<b>Traveler Request ID:</b> <code>${escapeHtml(t.requestId)}</code>\n`;
+    text += `<b>Traveler Route:</b> ${escapeHtml(t.departure)} → ${escapeHtml(t.destination)}\n`;
+    text += `<b>Traveler Schedule:</b>\n  🛫 ${escapeHtml(t.departureTime)}\n  🛬 ${escapeHtml(t.arrivalTime || 'N/A')}\n`;
+    text += `<b>Traveler Capacity:</b> ${escapeHtml(String(t.availableWeight))} kg\n\n`;
+
+    text += `✅ <b>Verified</b> by admin using ID, phone, passport & itinerary.\n`;
+    text += `🔒 Name / phone / email / passport details are hidden until you both confirm.\n`;
+
+    const keyboard = {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    {
+                        text: '✅ Confirm with this traveler',
+                        callback_data: `m_s_conf_${s.requestId}_${t.requestId}`
+                    }
+                ],
+                [
+                    {
+                        text: '➡ Skip',
+                        callback_data: `m_s_skip_${s.requestId}_${t.requestId}`
+                    }
+                ]
+            ]
+        },
+        parse_mode: 'HTML'
+    };
+
+    if (senderDoc.data.packagePhoto) {
+        await bot.sendPhoto(senderDoc.userId, senderDoc.data.packagePhoto, {
+            caption: text,
+            parse_mode: 'HTML',
+            reply_markup: keyboard.reply_markup
+        });
+    } else {
+        await bot.sendMessage(senderDoc.userId, text, keyboard);
+    }
+}
+
+async function sendMatchCardToTraveler(travelerDoc, senderDoc) {
+    const s = buildSenderSnapshot(senderDoc);
+    const t = buildTravelerSnapshot(travelerDoc);
+    if (!isSenderTravelerCompatible(s, t)) return;
+
+    let text = `<b>🔍 Possible Sender Match</b>\n\n`;
+    text += `<b>Your Request ID:</b> <code>${escapeHtml(t.requestId)}</code>\n`;
+    text += `<b>Your Route:</b> ${escapeHtml(t.departure)} → ${escapeHtml(t.destination)}\n`;
+    text += `<b>Your Capacity:</b> ${escapeHtml(String(t.availableWeight))} kg\n`;
+    text += `<b>Your Departure:</b> ${escapeHtml(t.departureTime)}\n\n`;
+
+    text += `<b>Sender Request ID:</b> <code>${escapeHtml(s.requestId)}</code>\n`;
+    text += `<b>Sender Route:</b> ${escapeHtml(s.pickup)} → ${escapeHtml(s.destination)}\n`;
+    text += `<b>Package:</b> ${escapeHtml(String(s.weight))} kg, ${escapeHtml(senderDoc.data.category || 'N/A')}\n`;
+    text += `<b>Send Date:</b> ${escapeHtml(s.sendDate)}\n\n`;
+
+    text += `✅ <b>Verified</b> by admin using ID, phone & documents.\n`;
+    text += `🔒 Name / phone / email / passport details are hidden until you both confirm.\n`;
+
+    const keyboard = {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    {
+                        text: '✅ Confirm with this sender',
+                        callback_data: `m_t_conf_${t.requestId}_${s.requestId}`
+                    }
+                ],
+                [
+                    {
+                        text: '➡ Skip',
+                        callback_data: `m_t_skip_${t.requestId}_${s.requestId}`
+                    }
+                ]
+            ]
+        },
+        parse_mode: 'HTML'
+    };
+
+    if (senderDoc.data.packagePhoto) {
+        await bot.sendPhoto(travelerDoc.userId, senderDoc.data.packagePhoto, {
+            caption: text,
+            parse_mode: 'HTML',
+            reply_markup: keyboard.reply_markup
+        });
+    } else {
+        await bot.sendMessage(travelerDoc.userId, text, keyboard);
+    }
+}
+
+async function triggerMatchingForRequest(role, requestId) {
+    try {
+        if (role === 'sender') {
+            const senderDoc = await sendersCol.findOne({ requestId });
+            if (!senderDoc) return;
+            if (senderDoc.matchLocked || senderDoc.pendingMatchWith) return;
+
+            const s = buildSenderSnapshot(senderDoc);
+            if (s.status !== 'Approved') return;
+
+            const candidateTravelers = await travelersCol
+                .find({
+                    status: 'Approved',
+                    matchLocked: { $ne: true },
+                    pendingMatchWith: { $in: [null, undefined] }
+                })
+                .toArray();
+
+            for (const trv of candidateTravelers) {
+                const t = buildTravelerSnapshot(trv);
+                if (isSenderTravelerCompatible(s, t)) {
+                    await sendMatchCardToSender(senderDoc, trv);
+                }
+            }
+        } else {
+            const travelerDoc = await travelersCol.findOne({ requestId });
+            if (!travelerDoc) return;
+            if (travelerDoc.matchLocked || travelerDoc.pendingMatchWith) return;
+
+            const t = buildTravelerSnapshot(travelerDoc);
+            if (t.status !== 'Approved') return;
+
+            const candidateSenders = await sendersCol
+                .find({
+                    status: 'Approved',
+                    matchLocked: { $ne: true },
+                    pendingMatchWith: { $in: [null, undefined] }
+                })
+                .toArray();
+
+            for (const snd of candidateSenders) {
+                const s = buildSenderSnapshot(snd);
+                if (isSenderTravelerCompatible(s, t)) {
+                    await sendMatchCardToTraveler(travelerDoc, snd);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('triggerMatchingForRequest error', err);
+    }
+}
+
+async function handleMatchCallback(query) {
+    const data = query.data;
+    const parts = data.split('_'); // m_s_conf_sndReq_trvReq
+    if (parts.length < 5) {
+        await bot.answerCallbackQuery(query.id, { text: 'Invalid match token.' });
+        return;
+    }
+    const side = parts[1];   // 's' or 't'
+    const action = parts[2]; // 'conf' or 'skip'
+    const myReqId = parts[3];
+    const otherReqId = parts[4];
+    const fromUserId = query.from.id;
+
+    if (action === 'skip') {
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: query.message.chat.id,
+                message_id: query.message.message_id
+            }).catch(() => { });
+            await bot.answerCallbackQuery(query.id, { text: 'Skipped this match.' });
+        } catch (e) { }
+        return;
+    }
+
+    if (action === 'conf') {
+        const myRole = (side === 's') ? 'sender' : 'traveler';
+        await handleUserMatchConfirm(myRole, myReqId, otherReqId, fromUserId, query);
+        return;
+    }
+
+    await bot.answerCallbackQuery(query.id, { text: 'Unknown match action.' });
+}
+
+async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserId, query) {
+    try {
+        const myCol = myRole === 'sender' ? sendersCol : travelersCol;
+        const otherCol = myRole === 'sender' ? travelersCol : sendersCol;
+
+        const myDoc = await myCol.findOne({ requestId: myReqId });
+        const otherDoc = await otherCol.findOne({ requestId: otherReqId });
+
+        if (!myDoc || !otherDoc) {
+            await bot.answerCallbackQuery(query.id, { text: 'Match not found anymore.' });
+            return;
+        }
+
+        if (String(myDoc.userId) !== String(telegramUserId)) {
+            await bot.answerCallbackQuery(query.id, { text: 'This match card is not for you.' });
+            return;
+        }
+
+        if (myDoc.status !== 'Approved' || otherDoc.status !== 'Approved') {
+            await bot.answerCallbackQuery(query.id, { text: 'One of the requests is not approved anymore.' });
+            return;
+        }
+
+        if (myDoc.matchLocked || otherDoc.matchLocked) {
+            await bot.answerCallbackQuery(query.id, { text: 'Already matched with someone else.' });
+            return;
+        }
+
+        if (myDoc.pendingMatchWith && myDoc.pendingMatchWith !== otherReqId) {
+            await bot.answerCallbackQuery(query.id, { text: 'You already confirmed another match.' });
+            return;
+        }
+
+        if (otherDoc.pendingMatchWith === myReqId) {
+            await myCol.updateOne(
+                { requestId: myReqId },
+                {
+                    $set: {
+                        matchLocked: true,
+                        matchedWith: otherReqId,
+                        matchFinalizedAt: new Date()
+                    },
+                    $unset: { pendingMatchWith: '' }
+                }
+            );
+            await otherCol.updateOne(
+                { requestId: otherReqId },
+                {
+                    $set: {
+                        matchLocked: true,
+                        matchedWith: myReqId,
+                        matchFinalizedAt: new Date()
+                    },
+                    $unset: { pendingMatchWith: '' }
+                }
+            );
+
+            const myLabel = myRole === 'sender' ? 'Sender' : 'Traveler';
+            const otherLabel = myRole === 'sender' ? 'Traveler' : 'Sender';
+
+            try {
+                await bot.sendMessage(
+                    myDoc.userId,
+                    `🤝 <b>Match Confirmed!</b>\nYou are now matched with a ${otherLabel}.\n\nYou can now chat here. Any normal message (not starting with /) will be forwarded to your match and visible to admin.`,
+                    { parse_mode: 'HTML' }
+                );
+                await bot.sendMessage(
+                    otherDoc.userId,
+                    `🤝 <b>Match Confirmed!</b>\nYou are now matched with a ${myLabel}.\n\nYou can now chat here. Any normal message (not starting with /) will be forwarded to your match and visible to admin.`,
+                    { parse_mode: 'HTML' }
+                );
+            } catch (e) { }
+
+            try {
+                await bot.sendMessage(
+                    String(ADMIN_GROUP_ID),
+                    `🤝 <b>Match finalized</b>\nSender: <code>${escapeHtml(myRole === 'sender' ? myReqId : otherReqId)}</code>\nTraveler: <code>${escapeHtml(myRole === 'sender' ? otherReqId : myReqId)}</code>`,
+                    { parse_mode: 'HTML' }
+                );
+            } catch (e) { }
+
+            try {
+                await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                    chat_id: query.message.chat.id,
+                    message_id: query.message.message_id
+                }).catch(() => { });
+            } catch (e) { }
+
+            await bot.answerCallbackQuery(query.id, { text: 'Match confirmed ✅' });
+            return;
+        } else {
+            await myCol.updateOne(
+                { requestId: myReqId },
+                {
+                    $set: {
+                        pendingMatchWith: otherReqId
+                    }
+                }
+            );
+
+            await bot.answerCallbackQuery(query.id, { text: 'Confirmation sent. Waiting for other user.' });
+
+            try {
+                await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                    chat_id: query.message.chat.id,
+                    message_id: query.message.message_id
+                }).catch(() => { });
+            } catch (e) { }
+
+            if (myRole === 'sender') {
+                await sendMatchCardToTraveler(otherDoc, myDoc);
+            } else {
+                await sendMatchCardToSender(otherDoc, myDoc);
+            }
+        }
+    } catch (err) {
+        console.error('handleUserMatchConfirm error', err);
+        try {
+            await bot.answerCallbackQuery(query.id, { text: 'Error while confirming match.' });
+        } catch (e) { }
+    }
+}
+
+// PRIVATE CHAT FOR MATCHED USERS
+async function tryForwardChatMessage(chatId, text) {
+    try {
+        const myDoc = await sendersCol.findOne({ userId: chatId, matchLocked: true }) ||
+            await travelersCol.findOne({ userId: chatId, matchLocked: true });
+        if (!myDoc) return false;
+
+        const otherCol = myDoc.role === 'sender' ? travelersCol : sendersCol;
+        if (!myDoc.matchedWith) return false;
+
+        const otherDoc = await otherCol.findOne({ requestId: myDoc.matchedWith });
+        if (!otherDoc) return false;
+
+        await bot.sendMessage(
+            otherDoc.userId,
+            `💬 Message from your match:\n${escapeHtml(text)}`,
+            { parse_mode: 'HTML' }
+        );
+
+        const pairInfo = myDoc.role === 'sender'
+            ? `Sender <code>${escapeHtml(myDoc.requestId)}</code> → Traveler <code>${escapeHtml(otherDoc.requestId)}</code>`
+            : `Traveler <code>${escapeHtml(myDoc.requestId)}</code> → Sender <code>${escapeHtml(otherDoc.requestId)}</code>`;
+
+        await bot.sendMessage(
+            String(ADMIN_GROUP_ID),
+            `👀 <b>Chat message</b>\n${pairInfo}\n\n🗨 <i>${escapeHtml(text)}</i>`,
+            { parse_mode: 'HTML' }
+        );
+
+        return true;
+    } catch (err) {
+        console.error('tryForwardChatMessage error', err);
+        return false;
+    }
+}
+
 // ---------- Commands ----------
 bot.onText(/\/start/, async (msg) => {
     try {
         const chatId = msg.chat.id;
-
-        // Prevent duplicate menu if bot restarted or Telegram sends deep-link + start
-        if (userSessions[chatId] && userSessions[chatId].__startShown) {
-            return; // Do not show menu again
-        }
-
-        // reset session
-        userSessions[chatId] = { __startShown: true };
-
+        userSessions[chatId] = null;
         const welcome = `<b>👋 Welcome to AirDlivers!</b>\n\nWe connect senders with travelers for fast next-day international delivery using passenger space.\n\nChoose an option below to begin.`;
-
         await bot.sendMessage(chatId, welcome, { parse_mode: 'HTML', ...mainMenuInline });
-
     } catch (err) {
         console.error('/start handler err', err);
     }
@@ -233,9 +643,14 @@ bot.on('callback_query', async (query) => {
     try {
         const data = query.data;
         const chatId = query.message.chat.id;
+
+        if (data && data.startsWith('m_')) {
+            await handleMatchCallback(query);
+            return;
+        }
+
         const fromId = query.from.id;
 
-        // main flows
         if (data === 'flow_sender') return startSenderFlow(chatId);
         if (data === 'flow_traveler') return startTravelerFlow(chatId);
         if (data === 'flow_tracking') {
@@ -244,7 +659,6 @@ bot.on('callback_query', async (query) => {
         }
         if (data === 'flow_help') return showHelpMenu(chatId);
 
-        // categories
         if (data && data.startsWith('cat_')) {
             const session = userSessions[chatId];
             if (!session || session.type !== 'sender' || session.step !== 'package_category') {
@@ -262,7 +676,6 @@ bot.on('callback_query', async (query) => {
             return bot.answerCallbackQuery(query.id);
         }
 
-        // confirmations: confirm_yes_role_requestId
         if (data && data.startsWith('confirm_')) {
             const parts = data.split('_');
             if (parts.length < 4) return bot.answerCallbackQuery(query.id, { text: 'Invalid token' });
@@ -277,8 +690,10 @@ bot.on('callback_query', async (query) => {
             }
             if (decision === 'no') {
                 userSessions[sessChatId] = null;
-                // remove inline keyboard from confirmation message if possible
-                await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: query.message.chat.id, message_id: query.message.message_id }).catch(() => { });
+                await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                    chat_id: query.message.chat.id,
+                    message_id: query.message.message_id
+                }).catch(() => { });
                 await bot.sendMessage(sessChatId, '❌ Submission cancelled. Use /start to begin again.');
                 return;
             } else {
@@ -288,13 +703,11 @@ bot.on('callback_query', async (query) => {
             }
         }
 
-        // Admin actions: approve_, reject_, reason_, requestvisa_
         if (data && (data.startsWith('approve_') || data.startsWith('reject_') || data.startsWith('reason_') || data.startsWith('requestvisa_'))) {
             const invokedBy = query.from.id;
             const userIsSuper = String(invokedBy) === String(SUPER_ADMIN_ID);
             const userIsLogged = Boolean(adminAuth[invokedBy]?.loggedIn);
 
-            // allow only super or logged admins
             if (!userIsSuper && !userIsLogged) {
                 await bot.answerCallbackQuery(query.id, { text: '🔒 Not authorized. Login with /admin (PIN) in admin group.' });
                 return;
@@ -337,7 +750,6 @@ bot.on('callback_query', async (query) => {
             }
         }
 
-        // fallback
         await bot.answerCallbackQuery(query.id, { text: 'Action received.' });
     } catch (err) {
         console.error('callback_query handler error', err);
@@ -382,15 +794,12 @@ bot.on('message', async (msg) => {
         const fromId = msg.from.id;
         const text = (msg.text || '').trim();
 
-        // Admin login flow with /admin
         if (text === '/admin') {
-            // super admin in private
             if (String(fromId) === String(SUPER_ADMIN_ID)) {
                 adminAuth[fromId] = { loggedIn: true, super: true, awaitingCustomReasonFor: null };
                 await bot.sendMessage(chatId, '🧠 Super Admin access granted ✅');
                 return;
             }
-            // invoked in admin group -> ask PIN
             if (String(chatId) === String(ADMIN_GROUP_ID)) {
                 adminAuth[fromId] = { awaitingPin: true, loggedIn: false, super: false, awaitingCustomReasonFor: null };
                 await bot.sendMessage(chatId, '🔑 Admin login: please reply in this group with the PIN (admins only).');
@@ -400,7 +809,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // admin PIN typed in admin group
         if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingPin) {
             if (text === String(ADMIN_PIN)) {
                 adminAuth[fromId] = { awaitingPin: false, loggedIn: true, super: false, awaitingCustomReasonFor: null };
@@ -412,7 +820,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // Admin typing custom rejection reason in admin group
         if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingCustomReasonFor) {
             const reqId = adminAuth[fromId].awaitingCustomReasonFor;
             const reasonText = text || 'Rejected by admin';
@@ -421,10 +828,13 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // handle user sessions
         const session = userSessions[chatId];
+
         if (!session) {
-            // ignore other messages
+            if (!text.startsWith('/')) {
+                const handled = await tryForwardChatMessage(chatId, text);
+                if (handled) return;
+            }
             return;
         }
 
@@ -452,7 +862,7 @@ bot.on('message', async (msg) => {
     }
 });
 
-// ---------- Photo handler ----------
+// ---------- Photo handler (main flow) ----------
 bot.on('photo', async (msg) => {
     try {
         const chatId = msg.chat.id;
@@ -475,7 +885,6 @@ bot.on('photo', async (msg) => {
                 await bot.sendMessage(chatId, "📝 Add optional notes or type 'None':", { parse_mode: 'HTML' });
                 return;
             }
-            // ignore unexpected photo silently (we removed noisy message)
             return;
         }
 
@@ -489,7 +898,6 @@ bot.on('photo', async (msg) => {
             }
             if (session.expectingPhoto === 'itinerary_photo') {
                 session.data.itineraryPhoto = fileId;
-
                 session.expectingPhoto = null;
                 session.step = 'optional_notes';
                 await bot.sendMessage(chatId, "📝 Add optional notes or type 'None':", { parse_mode: 'HTML' });
@@ -502,7 +910,6 @@ bot.on('photo', async (msg) => {
                 await bot.sendMessage(chatId, "📝 Add optional notes or type 'None':", { parse_mode: 'HTML' });
                 return;
             }
-            // ignore unexpected photo
             return;
         }
 
@@ -522,7 +929,7 @@ async function handleSenderTextStep(chatId, text) {
             if (text.length < 2) return bot.sendMessage(chatId, 'Enter a valid full name (min 2 chars).');
             data.name = text;
             sess.step = 'sender_phone';
-            return bot.sendMessage(chatId, '📞 Enter your Phone Number (example: +91 8106344793):', { parse_mode: 'HTML' });
+            return bot.sendMessage(chatId, '📞 Enter your Phone Number (example: +911234567089):', { parse_mode: 'HTML' });
 
         case 'sender_phone':
             if (!isValidPhone(text)) return bot.sendMessage(chatId, '❌ Invalid phone number. Use like +911234567890');
@@ -534,13 +941,21 @@ async function handleSenderTextStep(chatId, text) {
             if (!isValidEmail(text)) return bot.sendMessage(chatId, '❌ Invalid email. Please enter a valid email.');
             data.email = text.trim();
             sess.step = 'pickup_airport';
-            return bot.sendMessage(chatId, '🛫 Enter Pickup Airport (From):', { parse_mode: 'HTML' });
+            return bot.sendMessage(
+                chatId,
+                '🛫 Enter Pickup Airport (From):\n\n✈️ Please enter the airport clearly.\nExample: "Dubai International Airport" or "DXB".\nAvoid spelling mistakes or nicknames.',
+                { parse_mode: 'HTML' }
+            );
 
         case 'pickup_airport':
-            if (!text) return bot.sendMessage(chatId, 'Enter pickup airport name.');
+            if (!text) return bot.sendMessage(chatId, 'Enter pickup airport name clearly as shown in example.');
             data.pickup = text;
             sess.step = 'destination_airport';
-            return bot.sendMessage(chatId, '🛬 Enter Destination Airport (To):', { parse_mode: 'HTML' });
+            return bot.sendMessage(
+                chatId,
+                '🛬 Enter Destination Airport (To):\n\n✈️ Please enter the airport clearly.\nExample: "Heathrow Airport" or "LHR".\nAvoid spelling mistakes or nicknames.',
+                { parse_mode: 'HTML' }
+            );
 
         case 'destination_airport':
             data.destination = text;
@@ -552,7 +967,10 @@ async function handleSenderTextStep(chatId, text) {
             if (!m) return bot.sendMessage(chatId, 'Invalid weight format. Use numbers (e.g., 2.5).');
             const w = parseFloat(m[1]);
             if (isNaN(w) || w <= 0) return bot.sendMessage(chatId, 'Enter a positive weight.');
-            if (w > 10) { userSessions[chatId] = null; return bot.sendMessage(chatId, '❌ Weight > 10kg. Not allowed. Use /start to try again.'); }
+            if (w > 10) {
+                userSessions[chatId] = null;
+                return bot.sendMessage(chatId, '❌ Weight > 10kg. Not allowed. Use /start to try again.');
+            }
             data.weight = w;
             sess.step = 'package_category';
             return bot.sendMessage(chatId, '📦 Choose package category (inline):', categoryKeyboard);
@@ -576,7 +994,6 @@ async function handleSenderTextStep(chatId, text) {
                 if (sd && d < sd) return bot.sendMessage(chatId, 'Arrival Date cannot be earlier than Send Date.');
             }
             data.arrivalDate = moment(d).format('DD-MM-YYYY');
-            // next: selfie
             sess.step = 'selfie_id';
             sess.expectingPhoto = 'selfie_id';
             return bot.sendMessage(chatId, '🪪 Upload a selfie holding your ID (passport/license/tax card) - mandatory:', { parse_mode: 'HTML' });
@@ -587,7 +1004,6 @@ async function handleSenderTextStep(chatId, text) {
             sess.requestId = makeRequestId('snd');
             sess.step = 'confirm_pending';
             {
-                // build summary
                 let html = `<b>🧾 Sender Summary</b>\n\n`;
                 html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
                 html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
@@ -605,7 +1021,6 @@ async function handleSenderTextStep(chatId, text) {
             }
 
         default:
-            // do not spam "unexpected" messages; simply ignore unknown steps
             return;
     }
 }
@@ -621,13 +1036,17 @@ async function handleTravelerTextStep(chatId, text) {
             if (text.length < 2) return bot.sendMessage(chatId, 'Enter valid full name.');
             data.name = text;
             sess.step = 'traveler_phone';
-            return bot.sendMessage(chatId, '📞 Enter your Phone Number (example: +91 8106344793):', { parse_mode: 'HTML' });
+            return bot.sendMessage(chatId, '📞 Enter your Phone Number (example: +911234567089):', { parse_mode: 'HTML' });
 
         case 'traveler_phone':
             if (!isValidPhone(text)) return bot.sendMessage(chatId, '❌ Invalid phone format. Use +911234567890');
             data.phone = text.trim();
             sess.step = 'departure_airport';
-            return bot.sendMessage(chatId, '🛫 Enter Departure Airport (From):', { parse_mode: 'HTML' });
+            return bot.sendMessage(
+                chatId,
+                '🛫 Enter Departure Airport (From):\n\n✈️ Please enter the airport clearly.\nExample: "Mumbai International" or "BOM".\nAvoid spelling mistakes or nicknames.',
+                { parse_mode: 'HTML' }
+            );
 
         case 'departure_airport':
             data.departure = text;
@@ -637,7 +1056,11 @@ async function handleTravelerTextStep(chatId, text) {
         case 'departure_country':
             data.departureCountry = text;
             sess.step = 'destination_airport';
-            return bot.sendMessage(chatId, '🛬 Enter Destination Airport (To):', { parse_mode: 'HTML' });
+            return bot.sendMessage(
+                chatId,
+                '🛬 Enter Destination Airport (To):\n\n✈️ Please enter the airport clearly.\nExample: "Dubai International Airport" or "DXB".\nAvoid spelling mistakes or nicknames.',
+                { parse_mode: 'HTML' }
+            );
 
         case 'destination_airport':
             data.destination = text;
@@ -670,7 +1093,10 @@ async function handleTravelerTextStep(chatId, text) {
             if (!m) return bot.sendMessage(chatId, 'Invalid weight. Enter number in kg.');
             const w = parseFloat(m[1]);
             if (isNaN(w) || w <= 0) return bot.sendMessage(chatId, 'Enter positive weight.');
-            if (w > 10) { userSessions[chatId] = null; return bot.sendMessage(chatId, '❌ Weight > 10kg. Not allowed. Use /start.'); }
+            if (w > 10) {
+                userSessions[chatId] = null;
+                return bot.sendMessage(chatId, '❌ Weight > 10kg. Not allowed. Use /start.');
+            }
             data.availableWeight = w;
             sess.step = 'passport_number';
             return bot.sendMessage(chatId, '🛂 Enter your Passport Number (example: L7982227):', { parse_mode: 'HTML' });
@@ -704,12 +1130,11 @@ async function handleTravelerTextStep(chatId, text) {
             }
 
         default:
-            // do not spam
             return;
     }
 }
 
-// ---------- Final sender submit (store + send to admin) ----------
+// ---------- Final sender submit ----------
 async function handleFinalSenderSubmit(chatId, session) {
     try {
         const requestId = session.requestId || makeRequestId('snd');
@@ -721,15 +1146,20 @@ async function handleFinalSenderSubmit(chatId, session) {
             data: session.data,
             status: 'Pending',
             adminNote: '',
-            createdAt: new Date()
+            createdAt: new Date(),
+            matchLocked: false,
+            pendingMatchWith: null,
+            matchedWith: null
         };
         await sendersCol.insertOne(doc);
         await backupSenderToJSON(doc);
 
-        // notify sender
-        await bot.sendMessage(chatId, `✅ Your package has been submitted for admin approval.\nRequest ID: <code>${escapeHtml(requestId)}</code>\nPlease wait for admin action.`, { parse_mode: 'HTML' });
+        await bot.sendMessage(
+            chatId,
+            `✅ Your package has been submitted for admin approval.\nRequest ID: <code>${escapeHtml(requestId)}</code>\nPlease wait for admin action.`,
+            { parse_mode: 'HTML' }
+        );
 
-        // send to admin group (summary + photos + action keyboard)
         let summary = `<b>📦 New Sender Request</b>\n<b>Request ID:</b> <code>${escapeHtml(requestId)}</code>\n`;
         summary += `<b>Name:</b> ${escapeHtml(session.data.name)}\n`;
         summary += `<b>Phone:</b> ${escapeHtml(session.data.phone)}\n`;
@@ -742,10 +1172,18 @@ async function handleFinalSenderSubmit(chatId, session) {
         if (session.data.notes) summary += `<b>Notes:</b> ${escapeHtml(session.data.notes)}\n`;
 
         await bot.sendMessage(String(ADMIN_GROUP_ID), summary, { parse_mode: 'HTML' });
-        if (session.data.packagePhoto) await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.packagePhoto, { caption: `📦 Package Photo - ${escapeHtml(requestId)}` });
-        if (session.data.selfieId) await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.selfieId, { caption: `🪪 Selfie with ID - ${escapeHtml(requestId)}` });
-        // admin actions for sender (no request visa)
-        await bot.sendMessage(String(ADMIN_GROUP_ID), `Admin actions for <code>${escapeHtml(requestId)}</code>:`, { parse_mode: 'HTML', ...adminActionKeyboardForDoc(doc) });
+        if (session.data.packagePhoto) {
+            await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.packagePhoto, { caption: `📦 Package Photo - ${escapeHtml(requestId)}` });
+        }
+        if (session.data.selfieId) {
+            await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.selfieId, { caption: `🪪 Selfie with ID - ${escapeHtml(requestId)}` });
+        }
+
+        await bot.sendMessage(
+            String(ADMIN_GROUP_ID),
+            `Admin actions for <code>${escapeHtml(requestId)}</code>:`,
+            { parse_mode: 'HTML', ...adminActionKeyboardForDoc(doc) }
+        );
 
         userSessions[chatId] = null;
     } catch (err) {
@@ -766,14 +1204,20 @@ async function handleFinalTravelerSubmit(chatId, session) {
             data: session.data,
             status: 'Pending',
             adminNote: '',
-            createdAt: new Date()
+            createdAt: new Date(),
+            matchLocked: false,
+            pendingMatchWith: null,
+            matchedWith: null
         };
         await travelersCol.insertOne(doc);
         await backupTravelerToJSON(doc);
 
-        await bot.sendMessage(chatId, `✅ Your travel has been listed for admin approval.\nRequest ID: <code>${escapeHtml(requestId)}</code>\nWe will try to match packages on your route.`, { parse_mode: 'HTML' });
+        await bot.sendMessage(
+            chatId,
+            `✅ Your travel has been listed for admin approval.\nRequest ID: <code>${escapeHtml(requestId)}</code>\nWe will try to match packages on your route.`,
+            { parse_mode: 'HTML' }
+        );
 
-        // send to admin group
         let summary = `<b>🧳 New Traveler Request</b>\n<b>Request ID:</b> <code>${escapeHtml(requestId)}</code>\n`;
         summary += `<b>Name:</b> ${escapeHtml(session.data.name)}\n`;
         summary += `<b>Phone:</b> ${escapeHtml(session.data.phone)}\n`;
@@ -786,12 +1230,21 @@ async function handleFinalTravelerSubmit(chatId, session) {
         if (session.data.notes) summary += `<b>Notes:</b> ${escapeHtml(session.data.notes)}\n`;
 
         await bot.sendMessage(String(ADMIN_GROUP_ID), summary, { parse_mode: 'HTML' });
-        if (session.data.passportSelfie) await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.passportSelfie, { caption: `🪪 Passport Selfie - ${escapeHtml(requestId)}` });
-        if (session.data.itineraryPhoto) await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.itineraryPhoto, { caption: `📄 Itinerary - ${escapeHtml(requestId)}` });
-        if (session.data.visaPhoto) await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.visaPhoto, { caption: `🛂 Visa - ${escapeHtml(requestId)}` });
+        if (session.data.passportSelfie) {
+            await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.passportSelfie, { caption: `🪪 Passport Selfie - ${escapeHtml(requestId)}` });
+        }
+        if (session.data.itineraryPhoto) {
+            await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.itineraryPhoto, { caption: `📄 Itinerary - ${escapeHtml(requestId)}` });
+        }
+        if (session.data.visaPhoto) {
+            await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.visaPhoto, { caption: `🛂 Visa - ${escapeHtml(requestId)}` });
+        }
 
-        // admin action keyboard includes Request Visa option for traveler
-        await bot.sendMessage(String(ADMIN_GROUP_ID), `Admin actions for <code>${escapeHtml(requestId)}</code>:`, { parse_mode: 'HTML', ...adminActionKeyboardForDoc(doc) });
+        await bot.sendMessage(
+            String(ADMIN_GROUP_ID),
+            `Admin actions for <code>${escapeHtml(requestId)}</code>:`,
+            { parse_mode: 'HTML', ...adminActionKeyboardForDoc(doc) }
+        );
 
         userSessions[chatId] = null;
     } catch (err) {
@@ -801,10 +1254,8 @@ async function handleFinalTravelerSubmit(chatId, session) {
 }
 
 // ---------- Admin: Approve ----------
-// ---------- Admin: Approve ----------
 async function processApprove(requestId, invokedBy, query) {
     try {
-        // find either collection
         let found = await sendersCol.findOne({ requestId }) || await travelersCol.findOne({ requestId });
         if (!found) {
             await bot.sendMessage(String(ADMIN_GROUP_ID), `⚠️ Request ${escapeHtml(requestId)} not found.`);
@@ -826,15 +1277,13 @@ async function processApprove(requestId, invokedBy, query) {
             { $set: { status: 'Approved', adminNote: `Approved by admin ${invokedBy}`, updatedAt: new Date() } }
         );
 
-        // ----------- CORRECTED MESSAGE LOGIC -----------
-        let matchLine = "";
-        if (found.role === "sender") {
-            matchLine = "Please wait for matching traveler.";
+        let matchLine = '';
+        if (found.role === 'sender') {
+            matchLine = 'Please wait for matching traveler.';
         } else {
-            matchLine = "Please wait for matching sender.";
+            matchLine = 'Please wait for matching sender.';
         }
 
-        // notify original user
         try {
             await bot.sendMessage(
                 found.userId,
@@ -851,7 +1300,6 @@ async function processApprove(requestId, invokedBy, query) {
             console.warn('Could not notify user', found.userId, e.message);
         }
 
-        // notify admin group
         await bot.sendMessage(
             String(ADMIN_GROUP_ID),
             `✅ Approved ${escapeHtml(requestId)} by admin <code>${escapeHtml(String(invokedBy))}</code>`,
@@ -859,6 +1307,8 @@ async function processApprove(requestId, invokedBy, query) {
         );
 
         if (query) await bot.answerCallbackQuery(query.id, { text: 'Approved.' });
+
+        await triggerMatchingForRequest(found.role, requestId);
 
     } catch (err) {
         console.error('processApprove err', err);
@@ -883,22 +1333,40 @@ async function processReject(requestId, reasonText, invokedBy, query) {
             if (query) await bot.answerCallbackQuery(query.id, { text: 'Already approved; cannot reject.' });
             return;
         }
-        // update
-        const col = found.role === 'sender' ? sendersCol : travelersCol;
-        await col.updateOne({ requestId }, { $set: { status: 'Rejected', adminNote: reasonText, updatedAt: new Date() } });
 
-        // notify user
+        const col = found.role === 'sender' ? sendersCol : travelersCol;
+        await col.updateOne(
+            { requestId },
+            {
+                $set: {
+                    status: 'Rejected',
+                    adminNote: reasonText,
+                    updatedAt: new Date()
+                },
+                $unset: {
+                    pendingMatchWith: '',
+                    matchedWith: '',
+                    matchLocked: ''
+                }
+            }
+        );
+
         try {
-            await bot.sendMessage(found.userId, `❌ Your request <code>${escapeHtml(requestId)}</code> was <b>REJECTED</b>.\nReason: ${escapeHtml(reasonText)}\nIf you think this is a mistake, join support: <a href="https://t.me/+CAntejDg9plmNWI0">Support Group</a>`, { parse_mode: 'HTML', disable_web_page_preview: true });
-            await bot.sendMessage(found.userId, '➡️ Back to Main Menu:',
-                { parse_mode: 'HTML', ...mainMenuInline }
+            await bot.sendMessage(
+                found.userId,
+                `❌ Your request <code>${escapeHtml(requestId)}</code> was <b>REJECTED</b>.\nReason: ${escapeHtml(reasonText)}\nIf you think this is a mistake, join support: <a href="https://t.me/+CAntejDg9plmNWI0">Support Group</a>`,
+                { parse_mode: 'HTML', disable_web_page_preview: true }
             );
+            await bot.sendMessage(found.userId, '➡️ Back to Main Menu:', { parse_mode: 'HTML', ...mainMenuInline });
         } catch (e) {
             console.warn('Could not notify user', found.userId);
         }
 
-        // inform admin
-        await bot.sendMessage(String(ADMIN_GROUP_ID), `❌ Rejected ${escapeHtml(requestId)} by admin <code>${escapeHtml(String(invokedBy))}</code>\nReason: ${escapeHtml(reasonText)}`, { parse_mode: 'HTML' });
+        await bot.sendMessage(
+            String(ADMIN_GROUP_ID),
+            `❌ Rejected ${escapeHtml(requestId)} by admin <code>${escapeHtml(String(invokedBy))}</code>\nReason: ${escapeHtml(reasonText)}`,
+            { parse_mode: 'HTML' }
+        );
         if (query) await bot.answerCallbackQuery(query.id, { text: 'Rejection sent.' });
 
         return;
@@ -911,7 +1379,6 @@ async function processReject(requestId, reasonText, invokedBy, query) {
 // ---------- Admin: Request Visa for traveler ----------
 async function processRequestVisa(requestId, invokedBy, query) {
     try {
-        // must be traveler
         const found = await travelersCol.findOne({ requestId });
         if (!found) {
             await bot.sendMessage(String(ADMIN_GROUP_ID), `⚠️ Traveler ${escapeHtml(requestId)} not found or not a traveler request.`);
@@ -931,18 +1398,32 @@ async function processRequestVisa(requestId, invokedBy, query) {
             return;
         }
 
-        // update status to VisaRequested
-        await travelersCol.updateOne({ requestId }, { $set: { status: 'VisaRequested', adminNote: `Visa requested by admin ${invokedBy}`, updatedAt: new Date() } });
+        await travelersCol.updateOne(
+            { requestId },
+            {
+                $set: {
+                    status: 'VisaRequested',
+                    adminNote: `Visa requested by admin ${invokedBy}`,
+                    updatedAt: new Date()
+                }
+            }
+        );
 
-        // notify traveler: ask to upload visa (we'll accept photo next)
         try {
-            await bot.sendMessage(found.userId, `🛂 Admin has requested your Visa for request <code>${escapeHtml(requestId)}</code>.\nPlease upload a clear photo of your visa now (send as photo). If you do not have a visa, type None.`, { parse_mode: 'HTML' });
+            await bot.sendMessage(
+                found.userId,
+                `🛂 Admin has requested your Visa for request <code>${escapeHtml(requestId)}</code>.\nPlease upload a clear photo of your visa now (send as photo). If you do not have a visa, type None.`,
+                { parse_mode: 'HTML' }
+            );
         } catch (e) {
             console.warn('Could not notify traveler', found.userId);
         }
 
-        // inform admin group
-        await bot.sendMessage(String(ADMIN_GROUP_ID), `🛂 Visa requested from traveler ${escapeHtml(requestId)} by admin <code>${escapeHtml(String(invokedBy))}</code>`, { parse_mode: 'HTML' });
+        await bot.sendMessage(
+            String(ADMIN_GROUP_ID),
+            `🛂 Visa requested from traveler ${escapeHtml(requestId)} by admin <code>${escapeHtml(String(invokedBy))}</code>`,
+            { parse_mode: 'HTML' }
+        );
         if (query) await bot.answerCallbackQuery(query.id, { text: 'Visa requested.' });
 
         return;
@@ -952,41 +1433,42 @@ async function processRequestVisa(requestId, invokedBy, query) {
     }
 }
 
-// ---------- When traveler uploads visa AFTER VisaRequested ----------
-/*
- We will use the photo handler: when a traveler session is not active (userSessions[chatId] === null),
- but there is a DB traveler document in status 'VisaRequested' and the message is a photo,
- then treat that photo as visa upload.
-*/
+// ---------- Visa upload handler (second photo handler) ----------
 bot.on('photo', async (msg) => {
-    // This second photo handler handles visa uploads for already-submitted traveler (out-of-session)
     try {
         const chatId = msg.chat.id;
         const fileId = msg.photo[msg.photo.length - 1].file_id;
 
-        // If there's an active session that expects a photo, first handler above already covers it.
         const session = userSessions[chatId];
-        if (session && session.expectingPhoto) return; // handled previously
+        if (session && session.expectingPhoto) return;
 
-        // find pending traveler with VisaRequested and userId===chatId
         const pendingVisa = await travelersCol.findOne({ userId: chatId, status: 'VisaRequested' });
-        if (!pendingVisa) return; // ignore
+        if (!pendingVisa) return;
 
-        // save visa photo into DB document
-        await travelersCol.updateOne({ requestId: pendingVisa.requestId }, { $set: { 'data.visaPhoto': fileId, status: 'VisaUploaded', updatedAt: new Date() } });
+        await travelersCol.updateOne(
+            { requestId: pendingVisa.requestId },
+            {
+                $set: {
+                    'data.visaPhoto': fileId,
+                    status: 'VisaUploaded',
+                    updatedAt: new Date()
+                }
+            }
+        );
 
-        // notify admin group with visa photo and admin action buttons (approve/reject)
-        await bot.sendPhoto(String(ADMIN_GROUP_ID), fileId, { caption: `🛂 Visa uploaded for ${escapeHtml(pendingVisa.requestId)}` });
-        await bot.sendMessage(String(ADMIN_GROUP_ID), `Admin actions for <code>${escapeHtml(pendingVisa.requestId)}</code>:`, { parse_mode: 'HTML', ...adminActionKeyboardForDoc({ requestId: pendingVisa.requestId, role: 'traveler', status: 'VisaUploaded' }) });
+        await bot.sendPhoto(String(ADMIN_GROUP_ID), fileId, {
+            caption: `🛂 Visa uploaded for ${escapeHtml(pendingVisa.requestId)}`
+        });
+        await bot.sendMessage(
+            String(ADMIN_GROUP_ID),
+            `Admin actions for <code>${escapeHtml(pendingVisa.requestId)}</code>:`,
+            { parse_mode: 'HTML', ...adminActionKeyboardForDoc({ requestId: pendingVisa.requestId, role: 'traveler', status: 'VisaUploaded' }) }
+        );
 
-        // notify traveler
         await bot.sendMessage(chatId, `✅ Visa received. Admin will review and approve/reject shortly.`, { parse_mode: 'HTML' });
 
         return;
     } catch (err) {
-        // Already handled in previous photo handler - safe to swallow
-        // but we log for debugging
-        // console.error('visa photo handler err', err);
         return;
     }
 });
@@ -1000,14 +1482,3 @@ process.on('SIGINT', async () => {
 
 // ---------- startup log ----------
 console.log('✅ AirDlivers bot (final production) is running...');
-import express from "express";
-const app = express();
-
-app.get("/", (req, res) => {
-  res.send("AirDlivers Bot is running!");
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🌍 Keep-alive server running on port ${PORT}`);
-});
