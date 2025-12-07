@@ -14,6 +14,10 @@ import express from 'express';
 const app = express();
 app.get('/', (req, res) => {
   res.send('🌍 AirDlivers Bot is running!');
+  app.post(`/bot${BOT_TOKEN}`, express.json(), (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+});
 });
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
@@ -45,7 +49,8 @@ await fs.ensureFile(SENDERS_JSON);
 await fs.ensureFile(TRAVELERS_JSON);
 
 // ---------- bot ----------
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(BOT_TOKEN, { webHook: true }); 
+bot.setWebHook(`${process.env.RAILWAY_URL}/bot${BOT_TOKEN}`);
 
 // ---------- utilities ----------
 function escapeHtml(str = '') {
