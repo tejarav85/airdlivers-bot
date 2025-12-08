@@ -11,18 +11,18 @@ import { dirname, join } from 'path';
 import express from 'express';
 
 // ---------- Keep-alive HTTP server for Render/UptimeRobot ----------
-const app = express();
-app.get('/', (req, res) => {
-  res.send('🌍 AirDlivers Bot is running!');
-  app.post(`/bot${BOT_TOKEN}`, express.json(), (req, res) => {
+app.use(express.json()); // <-- required
+
+// Telegram Webhook Listener
+app.post(`/bot${BOT_TOKEN}`, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
 });
-});
-const PORT = process.env.PORT;
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🌍 Server active on PORT → ${PORT}`);
-});
+
+// Enable webhook mode (no polling!)
+const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
+bot.setWebHook(`https://airdlivers-bot-production.up.railway.app/bot${BOT_TOKEN}`);
+console.log("🚀 Webhook connected");
 
 // ---------- __dirname compatibility ----------
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +51,7 @@ await fs.ensureFile(TRAVELERS_JSON);
 // ---------- bot ----------
 const bot = new TelegramBot(BOT_TOKEN, { webHook: true }); 
 bot.setWebHook(`${process.env.RAILWAY_URL}/bot${BOT_TOKEN}`);
+app.use(express.json({ limit: '10mb' }));  // required or Telegram may reject
 
 // ---------- utilities ----------
 function escapeHtml(str = '') {
