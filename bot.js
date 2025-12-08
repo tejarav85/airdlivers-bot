@@ -1,4 +1,5 @@
-// bot.js - AirDlivers production bot (webhook-only, auto-matching & private chat)
+// bot.js - AirDlivers production bot (webhook + auto-recovery)
+// package.json must have: { "type": "module" }
 
 import 'dotenv/config';
 import TelegramBot from 'node-telegram-bot-api';
@@ -9,33 +10,91 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import express from 'express';
 
-// ------------------- ENV & SANITY CHECKS -------------------
+// ------------------- __dirname for ES modules -------------------
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// ------------------- ENV -------------------
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SUPER_ADMIN_ID = process.env.SUPER_ADMIN_ID || ''; // optional
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;       // required
 const ADMIN_PIN = process.env.ADMIN_PIN;                 // required
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'airdlivers';
-const RAILWAY_URL = process.env.RAILWAY_URL;             // required for webhook
+const RAILWAY_URL = process.env.RAILWAY_URL || 'https://airdlivers-bot-production.up.railway.app';
 
 if (!BOT_TOKEN) { console.error('FATAL: BOT_TOKEN missing'); process.exit(1); }
 if (!ADMIN_GROUP_ID) { console.error('FATAL: ADMIN_GROUP_ID missing'); process.exit(1); }
 if (!ADMIN_PIN) { console.error('FATAL: ADMIN_PIN missing'); process.exit(1); }
 if (!MONGO_URI) { console.error('FATAL: MONGO_URI missing'); process.exit(1); }
-if (!RAILWAY_URL) { console.error('FATAL: RAILWAY_URL missing'); process.exit(1); }
+
+// ------------------- JSON backup files -------------------
+const SENDERS_JSON = join(__dirname, 'senders.json');
+const TRAVELERS_JSON = join(__dirname, 'travelers.json');
+await fs.ensureFile(SENDERS_JSON);
+await fs.ensureFile(TRAVELERS_JSON);
+
+// ------------------- MongoDB -------------------
+let mongoClient, db, sendersCol, travelersCol, trackingCol;
+try {
+  mongoClient = new MongoClient(MONGO_URI);
+  await mongoClient.connect();
+  db = mongoClient.db(MONGO_DB_NAME);
+  sendersCol = db.collection('senders');
+  travelersCol = db.collection('travelers');
+  trackingCol = db.collection('trackingRequests');
+  console.log('✅ MongoDB connected successfully');
+} catch (e) {
+  console.error('MongoDB connection error:', e);
+  process.exit(1);
+}
+
+// ------------------- TELEGRAM BOT (webhook only) -------------------
+const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
+
+const WEBHOOK_PATH = `/bot${BOT_TOKEN}`;
+const WEBHOOK_URL = `${RAILWAY_URL}${WEBHOOK_PATH}`;
+
+try {
+  await bot.setWebHook(WEBHOOK_URL);
+  console.log(`✅ Webhook initially set to: ${WEBHOOK_URL}`);
+} catch (e) {
+  console.error('Error setting webhook at startup:', e.message || e);
+}
+
+// Auto-recovery: periodically verify & fix webhook
+async function ensureWebhook() {
+  try {
+    const info = await bot.getWebHookInfo();
+    if (!info) {
+      console.log('⚠️ getWebHookInfo returned empty, resetting webhook...');
+      await bot.setWebHook(WEBHOOK_URL);
+      return;
+    }
+    if (info.url !== WEBHOOK_URL) {
+      console.log(`🔁 Webhook URL mismatch.\nCurrent: ${info.url}\nExpected: ${WEBHOOK_URL}\nResetting...`);
+      await bot.setWebHook(WEBHOOK_URL);
+    }
+  } catch (err) {
+    console.error('ensureWebhook error:', err.message || err);
+  }
+}
+
+// run once at startup and then every 15 minutes
+ensureWebhook();
+setInterval(ensureWebhook, 15 * 60 * 1000);
 
 // ------------------- EXPRESS SERVER & WEBHOOK -------------------
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 
-// Health check
+// health check
 app.get('/', (req, res) => {
   res.send('🌍 AirDlivers Telegram bot is running (webhook mode).');
 });
 
-// NOTE: route MUST match exactly what we set in setWebHook:
-app.post(`/bot${BOT_TOKEN}`, (req, res) => {
-  // Telegram sends POST updates here
+// webhook endpoint – must match WEBHOOK_PATH
+app.post(WEBHOOK_PATH, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
@@ -45,24 +104,7 @@ app.listen(PORT, () => {
   console.log(`🌍 HTTP server listening on port ${PORT}`);
 });
 
-// ------------------- TELEGRAM BOT (webhook only) -------------------
-const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
-
-// Important: setWebhook URL must match your Railway URL + /bot<TOKEN>
-await bot.setWebHook(`${RAILWAY_URL}/bot${BOT_TOKEN}`);
-console.log(`✅ Webhook set to: ${RAILWAY_URL}/bot${BOT_TOKEN}`);
-
-// ------------------- __dirname & FILES -------------------
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const SENDERS_JSON = join(__dirname, 'senders.json');
-const TRAVELERS_JSON = join(__dirname, 'travelers.json');
-
-await fs.ensureFile(SENDERS_JSON);
-await fs.ensureFile(TRAVELERS_JSON);
-
-// ------------------- UTILITIES -------------------
+// ------------------- Utilities -------------------
 function escapeHtml(str = '') {
   return String(str)
     .replaceAll('&', '&amp;')
@@ -93,9 +135,11 @@ function parseDate_ddmmyy_hhmm(txt) {
   const m = moment(txt, 'DD-MM-YY HH:mm', true);
   return m.isValid() ? m.toDate() : null;
 }
-function todayStart() { return moment().startOf('day').toDate(); }
+function todayStart() {
+  return moment().startOf('day').toDate();
+}
 
-// Airport helpers
+// --- airport + matching helpers ---
 function normalizeAirportName(str = '') {
   return String(str || '')
     .trim()
@@ -124,25 +168,10 @@ function areDatesClose(senderSendDateStr, travelerDepartureStr) {
   const t = moment(travelerDepartureStr, 'DD-MM-YY HH:mm', true);
   if (!s.isValid() || !t.isValid()) return false;
   const diffDays = Math.abs(t.startOf('day').diff(s.startOf('day'), 'days'));
-  return diffDays <= 1; // within 1 day
+  return diffDays <= 1;
 }
 
-// ------------------- MONGODB -------------------
-let mongoClient, db, sendersCol, travelersCol, trackingCol;
-try {
-  mongoClient = new MongoClient(MONGO_URI);
-  await mongoClient.connect();
-  db = mongoClient.db(MONGO_DB_NAME);
-  sendersCol = db.collection('senders');
-  travelersCol = db.collection('travelers');
-  trackingCol = db.collection('trackingRequests');
-  console.log('✅ MongoDB connected successfully');
-} catch (e) {
-  console.error('MongoDB connection error:', e);
-  process.exit(1);
-}
-
-// ------------------- JSON BACKUP HELPERS -------------------
+// ------------------- JSON backup helpers -------------------
 async function backupSenderToJSON(doc) {
   const arr = (await fs.readJson(SENDERS_JSON).catch(() => [])) || [];
   arr.push(doc);
@@ -154,27 +183,40 @@ async function backupTravelerToJSON(doc) {
   await fs.writeJson(TRAVELERS_JSON, arr, { spaces: 2 });
 }
 
-// ------------------- IN-MEMORY STATE -------------------
+// ------------------- In-memory state -------------------
 const userSessions = {}; // chatId -> session
 /*
-session = {
+session example:
+{
   type: 'sender'|'traveler'|'tracking',
   step: 'sender_name'|...,
   data: {},
-  expectingPhoto: null|'package_photo'|'selfie_id'|'passport_selfie'|'itinerary_photo'|'visa_photo',
+  expectingPhoto: null|'package_photo'|'selfie_id'|'passport_selfie'|'itinerary_photo'|'visa_photo'
   requestId: 'snd...'
 }
 */
 const adminAuth = {}; // userId -> { awaitingPin, loggedIn, super, awaitingCustomReasonFor }
 
-// ------------------- KEYBOARDS -------------------
+// ------------------- Keyboards -------------------
 const categoryKeyboard = {
   reply_markup: {
     inline_keyboard: [
-      [{ text: '📄 Documents', callback_data: 'cat_Documents' }, { text: '🥇 Gold (with bill)', callback_data: 'cat_Gold' }],
-      [{ text: '💊 Medicines (prescription)', callback_data: 'cat_Medicines' }, { text: '👕 Clothes', callback_data: 'cat_Clothes' }],
-      [{ text: '🍱 Food (sealed)', callback_data: 'cat_Food' }, { text: '💻 Electronics (with bill)', callback_data: 'cat_Electronics' }],
-      [{ text: '🎁 Gifts', callback_data: 'cat_Gifts' }, { text: '⚠️ Prohibited items', callback_data: 'cat_Prohibited' }]
+      [
+        { text: '📄 Documents', callback_data: 'cat_Documents' },
+        { text: '🥇 Gold (with bill)', callback_data: 'cat_Gold' }
+      ],
+      [
+        { text: '💊 Medicines (prescription)', callback_data: 'cat_Medicines' },
+        { text: '👕 Clothes', callback_data: 'cat_Clothes' }
+      ],
+      [
+        { text: '🍱 Food (sealed)', callback_data: 'cat_Food' },
+        { text: '💻 Electronics (with bill)', callback_data: 'cat_Electronics' }
+      ],
+      [
+        { text: '🎁 Gifts', callback_data: 'cat_Gifts' },
+        { text: '⚠️ Prohibited items', callback_data: 'cat_Prohibited' }
+      ]
     ]
   }
 };
@@ -190,14 +232,16 @@ function confirmKeyboard(role, requestId) {
   };
 }
 
-// Admin action keyboard depends on role/status
 function adminActionKeyboardForDoc(doc) {
   const rid = doc.requestId;
   if (doc.role === 'sender') {
     return {
       reply_markup: {
         inline_keyboard: [
-          [{ text: '✅ Approve', callback_data: `approve_${rid}` }, { text: '❌ Reject', callback_data: `reject_${rid}` }]
+          [
+            { text: '✅ Approve', callback_data: `approve_${rid}` },
+            { text: '❌ Reject', callback_data: `reject_${rid}` }
+          ]
         ]
       }
     };
@@ -206,7 +250,10 @@ function adminActionKeyboardForDoc(doc) {
       return {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '✅ Approve', callback_data: `approve_${rid}` }, { text: '❌ Reject', callback_data: `reject_${rid}` }]
+            [
+              { text: '✅ Approve', callback_data: `approve_${rid}` },
+              { text: '❌ Reject', callback_data: `reject_${rid}` }
+            ]
           ]
         }
       };
@@ -214,7 +261,10 @@ function adminActionKeyboardForDoc(doc) {
       return {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '✅ Approve', callback_data: `approve_${rid}` }, { text: '❌ Reject', callback_data: `reject_${rid}` }],
+            [
+              { text: '✅ Approve', callback_data: `approve_${rid}` },
+              { text: '❌ Reject', callback_data: `reject_${rid}` }
+            ],
             [{ text: '🛂 Request Visa', callback_data: `requestvisa_${rid}` }]
           ]
         }
@@ -247,7 +297,7 @@ const mainMenuInline = {
   }
 };
 
-// ------------------- MATCHING HELPERS -------------------
+// ------------------- Matching helpers -------------------
 function buildSenderSnapshot(doc) {
   const data = doc?.data || {};
   return {
@@ -291,7 +341,7 @@ function isSenderTravelerCompatible(senderSnap, travelerSnap) {
   return true;
 }
 
-// ------------------- MATCH CARDS -------------------
+// ------------------- Match cards -------------------
 async function sendMatchCardToSender(senderDoc, travelerDoc) {
   const s = buildSenderSnapshot(senderDoc);
   const t = buildTravelerSnapshot(travelerDoc);
@@ -372,7 +422,7 @@ async function sendMatchCardToTraveler(travelerDoc, senderDoc) {
   }
 }
 
-// ------------------- TRIGGER MATCHING -------------------
+// ------------------- Trigger matching after approval -------------------
 async function triggerMatchingForRequest(role, requestId) {
   try {
     if (role === 'sender') {
@@ -425,7 +475,7 @@ async function triggerMatchingForRequest(role, requestId) {
   }
 }
 
-// ------------------- MATCH CALLBACK HANDLER -------------------
+// ------------------- Match callbacks -------------------
 async function handleMatchCallback(query) {
   const data = query.data;
   const parts = data.split('_'); // m_s_conf_sndReq_trvReq
@@ -459,7 +509,7 @@ async function handleMatchCallback(query) {
   await bot.answerCallbackQuery(query.id, { text: 'Unknown match action.' });
 }
 
-// ------------------- 2-STEP MATCH CONFIRM -------------------
+// ------------------- Confirm match & lock -------------------
 async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserId, query) {
   try {
     const myCol = myRole === 'sender' ? sendersCol : travelersCol;
@@ -552,14 +602,10 @@ async function handleUserMatchConfirm(myRole, myReqId, otherReqId, telegramUserI
       await bot.answerCallbackQuery(query.id, { text: 'Match confirmed ✅' });
       return;
     } else {
-      // first confirmation
+      // first side confirming
       await myCol.updateOne(
         { requestId: myReqId },
-        {
-          $set: {
-            pendingMatchWith: otherReqId
-          }
-        }
+        { $set: { pendingMatchWith: otherReqId } }
       );
 
       await bot.answerCallbackQuery(query.id, { text: 'Confirmation sent. Waiting for other user.' });
@@ -641,12 +687,15 @@ async function tryForwardChatMessage(chatId, text) {
   }
 }
 
-// ------------------- COMMANDS -------------------
+// ------------------- Commands -------------------
 bot.onText(/\/start/, async (msg) => {
   try {
     const chatId = msg.chat.id;
     userSessions[chatId] = null;
-    const welcome = `<b>👋 Welcome to AirDlivers!</b>\n\nWe connect senders with travelers for fast next-day international delivery using passenger space.\n\nChoose an option below to begin.`;
+    const welcome =
+      `<b>👋 Welcome to AirDlivers!</b>\n\n` +
+      `We connect senders with travelers for fast next-day international delivery using passenger space.\n\n` +
+      `Choose an option below to begin.`;
     await bot.sendMessage(chatId, welcome, { parse_mode: 'HTML', ...mainMenuInline });
   } catch (err) {
     console.error('/start handler err', err);
@@ -665,11 +714,15 @@ bot.onText(/\/id/, (msg) => {
 
 bot.onText(/\/privacy|\/help/, (msg) => {
   const chatId = msg.chat.id;
-  const text = `<b>ℹ️ Help / Support</b>\n\nSupport Group: <a href="https://t.me/+CAntejDg9plmNWI0">AirDlivers Support</a>\nSupport Email: support@airdlivers.com\n\nPrivacy: We collect data required to facilitate deliveries (name, contact, IDs when needed). We do not sell data.`;
+  const text =
+    `<b>ℹ️ Help / Support</b>\n\n` +
+    `Support Group: <a href="https://t.me/+CAntejDg9plmNWI0">AirDlivers Support</a>\n` +
+    `Support Email: support@airdlivers.com\n\n` +
+    `Privacy: We collect data required to facilitate deliveries (name, contact, IDs when needed). We do not sell data.`;
   bot.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
 });
 
-// ------------------- CALLBACK QUERY HANDLER -------------------
+// ------------------- Callback handler -------------------
 bot.on('callback_query', async (query) => {
   try {
     const data = query.data;
@@ -714,7 +767,7 @@ bot.on('callback_query', async (query) => {
       return bot.answerCallbackQuery(query.id);
     }
 
-    // confirmations: confirm_yes_role_requestId
+    // confirmations
     if (data && data.startsWith('confirm_')) {
       const parts = data.split('_');
       if (parts.length < 4) return bot.answerCallbackQuery(query.id, { text: 'Invalid token' });
@@ -742,8 +795,14 @@ bot.on('callback_query', async (query) => {
       }
     }
 
-    // Admin actions: approve_, reject_, reason_, requestvisa_
-    if (data && (data.startsWith('approve_') || data.startsWith('reject_') || data.startsWith('reason_') || data.startsWith('requestvisa_'))) {
+    // Admin actions
+    if (
+      data &&
+      (data.startsWith('approve_') ||
+        data.startsWith('reject_') ||
+        data.startsWith('reason_') ||
+        data.startsWith('requestvisa_'))
+    ) {
       const invokedBy = query.from.id;
       const userIsSuper = String(invokedBy) === String(SUPER_ADMIN_ID);
       const userIsLogged = Boolean(adminAuth[invokedBy]?.loggedIn);
@@ -797,7 +856,7 @@ bot.on('callback_query', async (query) => {
   }
 });
 
-// ------------------- FLOWS: START FUNCTIONS -------------------
+// ------------------- Flow helpers -------------------
 function startSenderFlow(chatId) {
   userSessions[chatId] = {
     type: 'sender',
@@ -821,21 +880,22 @@ function startTravelerFlow(chatId) {
 }
 
 function showHelpMenu(chatId) {
-  const text = `<b>ℹ️ Help / Support</b>\n\nSupport Group: <a href="https://t.me/+CAntejDg9plmNWI0">AirDlivers Support</a>\nEmail: support@airdlivers.com\n\nPrivacy: We collect required info (name, contact, IDs).`;
+  const text =
+    `<b>ℹ️ Help / Support</b>\n\n` +
+    `Support Group: <a href="https://t.me/+CAntejDg9plmNWI0">AirDlivers Support</a>\n` +
+    `Email: support@airdlivers.com\n\n` +
+    `Privacy: We collect required info (name, contact, IDs).`;
   bot.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
 }
 
-// ------------------- TEXT MESSAGE HANDLER -------------------
+// ------------------- Text message handler -------------------
 bot.on('message', async (msg) => {
   try {
     const chatId = msg.chat.id;
     const fromId = msg.from.id;
     const text = (msg.text || '').trim();
 
-    // ignore callback queries (they have no text)
-    if (!text) return;
-
-    // Admin login flow with /admin
+    // /admin flow
     if (text === '/admin') {
       if (String(fromId) === String(SUPER_ADMIN_ID)) {
         adminAuth[fromId] = { loggedIn: true, super: true, awaitingCustomReasonFor: null };
@@ -851,7 +911,7 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    // admin PIN typed in admin group
+    // admin PIN in admin group
     if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingPin) {
       if (text === String(ADMIN_PIN)) {
         adminAuth[fromId] = { awaitingPin: false, loggedIn: true, super: false, awaitingCustomReasonFor: null };
@@ -867,7 +927,7 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    // Admin typing custom rejection reason in admin group
+    // custom reject reason
     if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingCustomReasonFor) {
       const reqId = adminAuth[fromId].awaitingCustomReasonFor;
       const reasonText = text || 'Rejected by admin';
@@ -878,7 +938,6 @@ bot.on('message', async (msg) => {
 
     const session = userSessions[chatId];
 
-    // If no active session, treat non-command messages as private chat if matched
     if (!session) {
       if (!text.startsWith('/')) {
         const handled = await tryForwardChatMessage(chatId, text);
@@ -915,20 +974,19 @@ bot.on('message', async (msg) => {
       await handleTravelerTextStep(chatId, text);
       return;
     }
-
   } catch (err) {
     console.error('message handler error', err);
   }
 });
 
-// ------------------- PHOTO HANDLER (ALL CASES) -------------------
+// ------------------- Photo handler (single, merged) -------------------
 bot.on('photo', async (msg) => {
   try {
     const chatId = msg.chat.id;
     const fileId = msg.photo[msg.photo.length - 1].file_id;
     const session = userSessions[chatId];
 
-    // First: if session exists and expectingPhoto → handle form flow
+    // If in a session expecting a photo (sender/traveler flows)
     if (session) {
       if (session.type === 'sender') {
         if (session.expectingPhoto === 'package_photo') {
@@ -972,7 +1030,7 @@ bot.on('photo', async (msg) => {
       }
     }
 
-    // Second: visa upload after admin requests (status = VisaRequested)
+    // If not in a "photo expected" step, maybe this is a visa upload after admin requested visa:
     const pendingVisa = await travelersCol.findOne({ userId: chatId, status: 'VisaRequested' });
     if (!pendingVisa) return;
 
@@ -993,16 +1051,24 @@ bot.on('photo', async (msg) => {
     await bot.sendMessage(
       String(ADMIN_GROUP_ID),
       `Admin actions for <code>${escapeHtml(pendingVisa.requestId)}</code>:`,
-      { parse_mode: 'HTML', ...adminActionKeyboardForDoc({ requestId: pendingVisa.requestId, role: 'traveler', status: 'VisaUploaded' }) }
+      {
+        parse_mode: 'HTML',
+        ...adminActionKeyboardForDoc({
+          requestId: pendingVisa.requestId,
+          role: 'traveler',
+          status: 'VisaUploaded'
+        })
+      }
     );
-
-    await bot.sendMessage(chatId, `✅ Visa received. Admin will review and approve/reject shortly.`, { parse_mode: 'HTML' });
+    await bot.sendMessage(chatId, '✅ Visa received. Admin will review and approve/reject shortly.', {
+      parse_mode: 'HTML'
+    });
   } catch (err) {
     console.error('photo handler error', err);
   }
 });
 
-// ------------------- SENDER TEXT STEPS -------------------
+// ------------------- Sender text steps -------------------
 async function handleSenderTextStep(chatId, text) {
   const sess = userSessions[chatId];
   if (!sess) return;
@@ -1013,16 +1079,24 @@ async function handleSenderTextStep(chatId, text) {
       if (text.length < 2) return bot.sendMessage(chatId, 'Enter a valid full name (min 2 chars).');
       data.name = text;
       sess.step = 'sender_phone';
-      return bot.sendMessage(chatId, '📞 Enter your Phone Number (example: +911234567089):', { parse_mode: 'HTML' });
+      return bot.sendMessage(
+        chatId,
+        '📞 Enter your Phone Number (example: +911234567089):',
+        { parse_mode: 'HTML' }
+      );
 
     case 'sender_phone':
-      if (!isValidPhone(text)) return bot.sendMessage(chatId, '❌ Invalid phone number. Use like +911234567890');
+      if (!isValidPhone(text)) {
+        return bot.sendMessage(chatId, '❌ Invalid phone number. Use like +911234567890');
+      }
       data.phone = text.trim();
       sess.step = 'sender_email';
       return bot.sendMessage(chatId, '📧 Enter your Email:', { parse_mode: 'HTML' });
 
     case 'sender_email':
-      if (!isValidEmail(text)) return bot.sendMessage(chatId, '❌ Invalid email. Please enter a valid email.');
+      if (!isValidEmail(text)) {
+        return bot.sendMessage(chatId, '❌ Invalid email. Please enter a valid email.');
+      }
       data.email = text.trim();
       sess.step = 'pickup_airport';
       return bot.sendMessage(
@@ -1032,7 +1106,9 @@ async function handleSenderTextStep(chatId, text) {
       );
 
     case 'pickup_airport':
-      if (!text) return bot.sendMessage(chatId, 'Enter pickup airport name clearly as shown in example.');
+      if (!text) {
+        return bot.sendMessage(chatId, 'Enter pickup airport name clearly as shown in example.');
+      }
       data.pickup = text;
       sess.step = 'destination_airport';
       return bot.sendMessage(
@@ -1080,7 +1156,11 @@ async function handleSenderTextStep(chatId, text) {
       data.arrivalDate = moment(d).format('DD-MM-YYYY');
       sess.step = 'selfie_id';
       sess.expectingPhoto = 'selfie_id';
-      return bot.sendMessage(chatId, '🪪 Upload a selfie holding your ID (passport/license/tax card) - mandatory:', { parse_mode: 'HTML' });
+      return bot.sendMessage(
+        chatId,
+        '🪪 Upload a selfie holding your ID (passport/license/tax card) - mandatory:',
+        { parse_mode: 'HTML' }
+      );
     }
 
     case 'optional_notes':
@@ -1100,7 +1180,10 @@ async function handleSenderTextStep(chatId, text) {
         html += `<b>Send:</b> ${escapeHtml(data.sendDate)}\n`;
         html += `<b>Arrival:</b> ${escapeHtml(data.arrivalDate)}\n`;
         if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
-        await bot.sendMessage(chatId, html, { parse_mode: 'HTML', ...confirmKeyboard('sender', sess.requestId) });
+        await bot.sendMessage(chatId, html, {
+          parse_mode: 'HTML',
+          ...confirmKeyboard('sender', sess.requestId)
+        });
         return;
       }
 
@@ -1109,7 +1192,7 @@ async function handleSenderTextStep(chatId, text) {
   }
 }
 
-// ------------------- TRAVELER TEXT STEPS -------------------
+// ------------------- Traveler text steps -------------------
 async function handleTravelerTextStep(chatId, text) {
   const sess = userSessions[chatId];
   if (!sess) return;
@@ -1120,7 +1203,11 @@ async function handleTravelerTextStep(chatId, text) {
       if (text.length < 2) return bot.sendMessage(chatId, 'Enter valid full name.');
       data.name = text;
       sess.step = 'traveler_phone';
-      return bot.sendMessage(chatId, '📞 Enter your Phone Number (example: +911234567089):', { parse_mode: 'HTML' });
+      return bot.sendMessage(
+        chatId,
+        '📞 Enter your Phone Number (example: +911234567089):',
+        { parse_mode: 'HTML' }
+      );
 
     case 'traveler_phone':
       if (!isValidPhone(text)) return bot.sendMessage(chatId, '❌ Invalid phone format. Use +911234567890');
@@ -1187,7 +1274,9 @@ async function handleTravelerTextStep(chatId, text) {
     }
 
     case 'passport_number':
-      if (!/^[A-Za-z0-9]{7,9}$/.test(text)) return bot.sendMessage(chatId, 'Invalid passport format. Example: L7982227');
+      if (!/^[A-Za-z0-9]{7,9}$/.test(text)) {
+        return bot.sendMessage(chatId, 'Invalid passport format. Example: L7982227');
+      }
       data.passportNumber = text.trim();
       sess.expectingPhoto = 'passport_selfie';
       sess.step = 'passport_selfie';
@@ -1209,7 +1298,10 @@ async function handleTravelerTextStep(chatId, text) {
         html += `<b>Available Weight:</b> ${escapeHtml(String(data.availableWeight))} kg\n`;
         html += `<b>Passport:</b> ${escapeHtml(data.passportNumber)}\n`;
         if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
-        await bot.sendMessage(chatId, html, { parse_mode: 'HTML', ...confirmKeyboard('traveler', sess.requestId) });
+        await bot.sendMessage(chatId, html, {
+          parse_mode: 'HTML',
+          ...confirmKeyboard('traveler', sess.requestId)
+        });
         return;
       }
 
@@ -1218,7 +1310,7 @@ async function handleTravelerTextStep(chatId, text) {
   }
 }
 
-// ------------------- FINAL SUBMIT: SENDER -------------------
+// ------------------- Final Sender submit -------------------
 async function handleFinalSenderSubmit(chatId, session) {
   try {
     const requestId = session.requestId || makeRequestId('snd');
@@ -1257,10 +1349,14 @@ async function handleFinalSenderSubmit(chatId, session) {
 
     await bot.sendMessage(String(ADMIN_GROUP_ID), summary, { parse_mode: 'HTML' });
     if (session.data.packagePhoto) {
-      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.packagePhoto, { caption: `📦 Package Photo - ${escapeHtml(requestId)}` });
+      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.packagePhoto, {
+        caption: `📦 Package Photo - ${escapeHtml(requestId)}`
+      });
     }
     if (session.data.selfieId) {
-      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.selfieId, { caption: `🪪 Selfie with ID - ${escapeHtml(requestId)}` });
+      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.selfieId, {
+        caption: `🪪 Selfie with ID - ${escapeHtml(requestId)}`
+      });
     }
 
     await bot.sendMessage(
@@ -1276,7 +1372,7 @@ async function handleFinalSenderSubmit(chatId, session) {
   }
 }
 
-// ------------------- FINAL SUBMIT: TRAVELER -------------------
+// ------------------- Final Traveler submit -------------------
 async function handleFinalTravelerSubmit(chatId, session) {
   try {
     const requestId = session.requestId || makeRequestId('trv');
@@ -1315,13 +1411,19 @@ async function handleFinalTravelerSubmit(chatId, session) {
 
     await bot.sendMessage(String(ADMIN_GROUP_ID), summary, { parse_mode: 'HTML' });
     if (session.data.passportSelfie) {
-      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.passportSelfie, { caption: `🪪 Passport Selfie - ${escapeHtml(requestId)}` });
+      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.passportSelfie, {
+        caption: `🪪 Passport Selfie - ${escapeHtml(requestId)}`
+      });
     }
     if (session.data.itineraryPhoto) {
-      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.itineraryPhoto, { caption: `📄 Itinerary - ${escapeHtml(requestId)}` });
+      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.itineraryPhoto, {
+        caption: `📄 Itinerary - ${escapeHtml(requestId)}`
+      });
     }
     if (session.data.visaPhoto) {
-      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.visaPhoto, { caption: `🛂 Visa - ${escapeHtml(requestId)}` });
+      await bot.sendPhoto(String(ADMIN_GROUP_ID), session.data.visaPhoto, {
+        caption: `🛂 Visa - ${escapeHtml(requestId)}`
+      });
     }
 
     await bot.sendMessage(
@@ -1337,7 +1439,7 @@ async function handleFinalTravelerSubmit(chatId, session) {
   }
 }
 
-// ------------------- ADMIN: APPROVE -------------------
+// ------------------- Admin: Approve -------------------
 async function processApprove(requestId, invokedBy, query) {
   try {
     let found = await sendersCol.findOne({ requestId }) || await travelersCol.findOne({ requestId });
@@ -1361,7 +1463,7 @@ async function processApprove(requestId, invokedBy, query) {
       { $set: { status: 'Approved', adminNote: `Approved by admin ${invokedBy}`, updatedAt: new Date() } }
     );
 
-    let matchLine = found.role === 'sender'
+    const matchLine = found.role === 'sender'
       ? 'Please wait for matching traveler.'
       : 'Please wait for matching sender.';
 
@@ -1391,7 +1493,7 @@ async function processApprove(requestId, invokedBy, query) {
   }
 }
 
-// ------------------- ADMIN: REJECT -------------------
+// ------------------- Admin: Reject -------------------
 async function processReject(requestId, reasonText, invokedBy, query) {
   try {
     let found = await sendersCol.findOne({ requestId }) || await travelersCol.findOne({ requestId });
@@ -1443,14 +1545,13 @@ async function processReject(requestId, reasonText, invokedBy, query) {
       { parse_mode: 'HTML' }
     );
     if (query) await bot.answerCallbackQuery(query.id, { text: 'Rejection sent.' });
-
   } catch (err) {
     console.error('processReject err', err);
     if (query) await bot.answerCallbackQuery(query.id, { text: 'Error during rejection.' });
   }
 }
 
-// ------------------- ADMIN: REQUEST VISA -------------------
+// ------------------- Admin: Request Visa -------------------
 async function processRequestVisa(requestId, invokedBy, query) {
   try {
     const found = await travelersCol.findOne({ requestId });
@@ -1499,18 +1600,18 @@ async function processRequestVisa(requestId, invokedBy, query) {
       { parse_mode: 'HTML' }
     );
     if (query) await bot.answerCallbackQuery(query.id, { text: 'Visa requested.' });
-
   } catch (err) {
     console.error('processRequestVisa err', err);
     if (query) await bot.answerCallbackQuery(query.id, { text: 'Error during visa request.' });
   }
 }
 
-// ------------------- GRACEFUL SHUTDOWN -------------------
+// ------------------- graceful shutdown -------------------
 process.on('SIGINT', async () => {
   console.log('Shutting down...');
   try { if (mongoClient) await mongoClient.close(); } catch (e) { }
   process.exit(0);
 });
 
-console.log('✅ AirDlivers bot (webhook production) is running...');
+// ------------------- startup log -------------------
+console.log('✅ AirDlivers bot (webhook + auto-recovery) is running...');
