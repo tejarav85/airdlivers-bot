@@ -112,24 +112,15 @@ function isValidPhone(t) {
 }
 
 console.log("✅ CHUNK 1 loaded.");
+
 // ================================================================
 // CHUNK 2 — USER SESSION SYSTEM + AIRPORT + DATE HELPERS + BACKUP
 // ================================================================
 
 // ------ In-memory user sessions ------
-/*
-userSessions[chatId] = {
-    type: "sender" | "traveler" | "tracking",
-    step: "...",
-    data: {},
-    requestId: "...",
-    expectingPhoto: "package_photo" | "passport_selfie" | "itinerary_photo" | null
-}
-*/
 const userSessions = {};
 
-
-// ==================== AIRPORT NORMALIZATION ====================
+// Airport cleanup
 function normalizeAirportName(str = "") {
     return String(str)
         .trim()
@@ -146,8 +137,7 @@ function airportsMatch(a, b) {
     return normalizeAirportName(a) === normalizeAirportName(b);
 }
 
-
-// ==================== DATE HELPERS ====================
+// Date helpers
 function parseDate_ddmmyyyy(txt) {
     const m = moment(txt, "DD-MM-YYYY", true);
     return m.isValid() ? m.toDate() : null;
@@ -162,8 +152,7 @@ function todayStart() {
     return moment().startOf("day").toDate();
 }
 
-
-// ==================== MATCHING HELPERS ====================
+// Weight matching
 function isWeightCompatible(senderKg, travelerKg) {
     const s = Number(senderKg), t = Number(travelerKg);
     if (isNaN(s) || isNaN(t)) return false;
@@ -177,8 +166,7 @@ function areDatesClose(sendDate, depDateTime) {
     return Math.abs(t.startOf("day").diff(s.startOf("day"), "days")) <= 1;
 }
 
-
-// ==================== JSON BACKUP HELPERS ====================
+// JSON backup
 async function backupSenderJSON(doc) {
     const arr = (await fs.readJson(SENDERS_JSON).catch(() => [])) || [];
     arr.push(doc);
@@ -191,715 +179,519 @@ async function backupTravelerJSON(doc) {
     await fs.writeJson(TRAVELERS_JSON, arr, { spaces: 2 });
 }
 
-
 console.log("✅ CHUNK 2 loaded.");
 // ================================================================
 // CHUNK 3 — MAIN MENU + START FLOW + HELP/SUPPORT SECTION
 // ================================================================
 
-// ------------------- MAIN MENU INLINE KEYBOARD -------------------
 const mainMenuKeyboard = {
-    reply_markup: {
-        inline_keyboard: [
-            [{ text: "📦 Send a Package", callback_data: "flow_sender" }],
-            [{ text: "🧳 Traveler (carry items)", callback_data: "flow_traveler" }],
-            [{ text: "📍 Track Shipment", callback_data: "flow_tracking" }],
-            [{ text: "ℹ️ Help / Support", callback_data: "flow_help" }]
-        ]
-    }
+  reply_markup: {
+    inline_keyboard: [
+      [{ text: "📦 Send a Package", callback_data: "flow_sender" }],
+      [{ text: "🧳 Traveler (carry items)", callback_data: "flow_traveler" }],
+      [{ text: "📍 Track Shipment", callback_data: "flow_tracking" }],
+      [{ text: "ℹ️ Help / Support", callback_data: "flow_help" }]
+    ]
+  }
 };
 
-
-// ------------------- HELP & SUPPORT TEXT -------------------
-function showHelpMenu(chatId) {
-  const text =
+// HELP / SUPPORT
+function helpSupportText() {
+  return (
     `<b>ℹ️ Help & Support</b>\n\n` +
-    `AirDlivers helps connect <b>senders</b> with <b>verified travelers</b> for fast and secure international package delivery.\n\n` +
-    
+    `AirDlivers connects <b>senders</b> with <b>verified travelers</b> for safe international package delivery.\n\n` +
+
     `<b>📞 Support</b>\n` +
     `• Telegram Support Group: <a href="https://t.me/+CAntejDg9plmNWI0">Join Here</a>\n` +
     `• Email: support@airdlivers.com\n\n` +
 
     `<b>🔐 Privacy Policy (Simple)</b>\n` +
-    `• We only collect the information needed to verify users (name, phone, email, ID).\n` +
-    `• Photos (ID, passport, itinerary) are used only for safety verification.\n` +
-    `• We NEVER sell or share your data with third parties.\n` +
-    `• Only admin can review chat in case of dispute or suspicious activity.\n\n` +
+    `• We only collect what is needed for verification (name, phone, email, ID).\n` +
+    `• Photos (ID, passport, itinerary) are only for safety.\n` +
+    `• We NEVER sell or share your data.\n` +
+    `• Admin may view conversations only if suspicious activity is reported.\n\n` +
 
-    `<b>⚠️ Important Safety Notes</b>\n` +
-    `• Do NOT send illegal or prohibited items.\n` +
-    `• Travelers MUST verify their identity.\n` +
-    `• Sender & traveler personal details are hidden until both sides confirm.\n\n` +
+    `<b>⚠️ Safety Notes</b>\n` +
+    `• No illegal or restricted items.\n` +
+    `• Travelers MUST verify identity.\n` +
+    `• Personal information stays hidden until both sides confirm.\n\n` +
 
     `<b>🛟 Need Help?</b>\n` +
-    `Message us anytime or join the support group.`;
+    `Contact us anytime.`
+  );
+}
 
-  bot.sendMessage(chatId, text, {
-    parse_mode: 'HTML',
+async function showHelpMenu(chatId) {
+  await bot.sendMessage(chatId, helpSupportText(), {
+    parse_mode: "HTML",
     disable_web_page_preview: true
   });
 }
 
-bot.onText(/\/help|\/privacy/, (msg) => {
-  showHelpMenu(msg.chat.id);
-});
-// ------------------- SEND HELP MENU -------------------
-async function showHelpMenu(chatId) {
-    await bot.sendMessage(chatId, helpSupportText(), {
-        parse_mode: "HTML",
-        disable_web_page_preview: true
-    });
-}
+bot.onText(/\/help|\/privacy/, (msg) => showHelpMenu(msg.chat.id));
 
-
-// ------------------- START COMMAND -------------------
+// START COMMAND
 bot.onText(/\/start/, async (msg) => {
-    const chatId = msg.chat.id;
+  const chatId = msg.chat.id;
 
-    // Reset user session safely
-    userSessions[chatId] = null;
+  // Reset user session
+  userSessions[chatId] = null;
 
-    const welcome =
-        `<b>👋 Welcome to AirDlivers!</b>\n\n` +
-        `We connect <b>Senders</b> with <b>Travelers</b> for fast, safe and affordable international delivery.\n\n` +
-        `Choose an option below to get started.`;
+  const welcome =
+    `<b>👋 Welcome to AirDlivers!</b>\n\n` +
+    `We connect <b>Senders</b> with <b>Travelers</b> for fast, reliable, and budget-friendly delivery.\n\n` +
+    `Choose an option below to begin.`;
 
-    await bot.sendMessage(chatId, welcome, {
-        parse_mode: "HTML",
-        ...mainMenuKeyboard
-    });
-});
-
-
-// ------------------- HELP COMMAND (optional) -------------------
-bot.onText(/\/help/, async (msg) => {
-    const chatId = msg.chat.id;
-    await showHelpMenu(chatId);
-});
-
-
-// ------------------- PRIVACY COMMAND -------------------
-bot.onText(/\/privacy/, async (msg) => {
-    const chatId = msg.chat.id;
-
-    const text =
-        `<b>🔐 Privacy Policy</b>\n\n` +
-        `AirDlivers values your privacy and protection.\n\n` +
-        `We only collect the minimum information necessary:` +
-        `\n• Name\n• Phone number\n• Email\n• ID verification photos\n• Travel or shipment details\n\n` +
-        `This data is <b>not</b> sold or shared outside the platform.\n` +
-        `It is used only for verification and matching purposes.\n\n` +
-        `For any concerns email: <a href="mailto:support@airdlivers.com">support@airdlivers.com</a>`;
-
-    await bot.sendMessage(chatId, text, {
-        parse_mode: "HTML",
-        disable_web_page_preview: true
-    });
+  await bot.sendMessage(chatId, welcome, {
+    parse_mode: "HTML",
+    ...mainMenuKeyboard
+  });
 });
 
 console.log("✅ CHUNK 3 loaded.");
+
+
+
 // ================================================================
-// CHUNK 4 — ADMIN LOGIN SYSTEM (PIN-based + Super Admin)
+// CHUNK 4 — ADMIN LOGIN SYSTEM
 // ================================================================
 
-// admin state memory
 const adminAuth = {}; 
-// Structure:
 // adminAuth[userId] = {
-//   awaitingPin: true/false,
-//   loggedIn: true/false,
-//   super: true/false,
-//   awaitingCustomReasonFor: <requestId|null>
+//   awaitingPin: boolean,
+//   loggedIn: boolean,
+//   super: boolean,
+//   awaitingSuspendReasonFor: userId|null,
+//   awaitingTerminateReasonFor: userId|null
 // };
 
-
-// ------------------- ADMIN LOGIN COMMAND -------------------
 bot.onText(/\/admin/, async (msg) => {
-    const chatId = msg.chat.id;
-    const adminId = msg.from.id;
+  const chatId = msg.chat.id;
+  const adminId = msg.from.id;
 
-    // SUPER ADMIN LOGIN — bypass PIN
-    if (String(adminId) === String(SUPER_ADMIN_ID)) {
-        adminAuth[adminId] = {
-            loggedIn: true,
-            super: true,
-            awaitingPin: false,
-            awaitingCustomReasonFor: null
-        };
-        await bot.sendMessage(chatId, '🧠 Super Admin access granted ✅');
-        return;
-    }
-
-    // Only admin group may log in
-    if (String(chatId) !== String(ADMIN_GROUP_ID)) {
-        return bot.sendMessage(chatId, '🚫 Admin login allowed only in admin group.');
-    }
-
-    // Normal admin login requires PIN
+  // SUPER ADMIN bypass
+  if (String(adminId) === String(SUPER_ADMIN_ID)) {
     adminAuth[adminId] = {
-        loggedIn: false,
-        super: false,
-        awaitingPin: true,
-        awaitingCustomReasonFor: null
+      loggedIn: true,
+      super: true,
+      awaitingPin: false
     };
+    return bot.sendMessage(chatId, "🧠 Super Admin access granted.");
+  }
 
-    await bot.sendMessage(chatId, '🔑 Enter Admin PIN:');
+  // must use admin group
+  if (String(chatId) !== String(ADMIN_GROUP_ID))
+    return bot.sendMessage(chatId, "🚫 Admin login allowed only in admin group.");
+
+  adminAuth[adminId] = {
+    loggedIn: false,
+    awaitingPin: true,
+    super: false
+  };
+
+  await bot.sendMessage(chatId, "🔑 Enter Admin PIN:");
 });
 
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const adminId = msg.from.id;
+  const text = (msg.text || "").trim();
 
-// ------------------- ADMIN PIN CHECK -------------------
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const adminId = msg.from.id;
-    const text = msg.text ? msg.text.trim() : "";
+  if (String(chatId) !== String(ADMIN_GROUP_ID)) return;
 
-    // Only process PIN in admin group
-    if (String(chatId) !== String(ADMIN_GROUP_ID)) return;
+  if (!adminAuth[adminId]?.awaitingPin) return;
 
-    // Check if admin is awaiting PIN
-    if (!adminAuth[adminId]?.awaitingPin) return;
+  if (text === String(ADMIN_PIN)) {
+    adminAuth[adminId] = {
+      loggedIn: true,
+      awaitingPin: false,
+      super: false
+    };
+    return bot.sendMessage(chatId, "✅ Admin login successful.");
+  }
 
-    // Validate PIN
-    if (text === String(ADMIN_PIN)) {
-        adminAuth[adminId] = {
-            waitingPin: false,
-            loggedIn: true,
-            super: false,
-            awaitingCustomReasonFor: null
-        };
+  adminAuth[adminId].awaitingPin = false;
+  adminAuth[adminId].loggedIn = false;
 
-        await bot.sendMessage(
-            chatId,
-            `<b>✅ Admin login successful</b>\nAccess granted to admin <code>${adminId}</code>`,
-            { parse_mode: "HTML" }
-        );
-    } else {
-        adminAuth[adminId] = {
-            loggedIn: false,
-            awaitingPin: false,
-            super: false,
-            awaitingCustomReasonFor: null
-        };
-
-        await bot.sendMessage(chatId, '❌ Incorrect PIN. Access denied.');
-    }
+  await bot.sendMessage(chatId, "❌ Incorrect PIN.");
 });
 
-
-// ------------------- ADMIN ACCESS CHECK UTILITY -------------------
 function isAdmin(userId) {
-    return (
-        adminAuth[userId]?.loggedIn ||
-        String(userId) === String(SUPER_ADMIN_ID)
-    );
+  return (
+    adminAuth[userId]?.loggedIn ||
+    String(userId) === String(SUPER_ADMIN_ID)
+  );
 }
 
-console.log("✅ CHUNK 4 loaded: Admin login system ready.");
-// ==================================================================
-// CHUNK 5 — SUSPEND / UNSUSPEND / TERMINATE CHAT (MONGODB VERSION)
-// ==================================================================
-
-// Mongo collection for user control (suspension + termination)
-const userControlCol = db.collection("userControls");
+console.log("✅ CHUNK 4 loaded.");
 
 
-// ------------------- CHECKERS -------------------
 
-// Check if suspended
+// ================================================================
+// CHUNK 5 — SUSPEND / UNSUSPEND / TERMINATE SYSTEM
+// ================================================================
+
 async function isUserSuspended(userId) {
-    const doc = await userControlCol.findOne({ userId: String(userId) });
-    return doc?.suspended === true;
+  const doc = await userControlCol.findOne({ userId: String(userId) });
+  return doc?.suspended === true;
 }
 
-// Check if chat terminated
 async function isChatTerminated(userId) {
-    const doc = await userControlCol.findOne({ userId: String(userId) });
-    return doc?.terminated === true;
+  const doc = await userControlCol.findOne({ userId: String(userId) });
+  return doc?.terminated === true;
 }
 
+async function suspendUser(userId, reason = "Violation") {
+  await userControlCol.updateOne(
+    { userId: String(userId) },
+    {
+      $set: {
+        suspended: true,
+        terminated: false,
+        reason,
+        updatedAt: new Date()
+      }
+    },
+    { upsert: true }
+  );
 
-// ------------------- ACTIONS -------------------
+  await bot.sendMessage(
+    userId,
+    `⚠️ <b>Your access has been suspended</b>\nReason: ${escapeHtml(reason)}`,
+    { parse_mode: "HTML" }
+  );
 
-// Suspend a user
-async function suspendUser(userId, reason = "Violation of platform rules") {
-    await userControlCol.updateOne(
-        { userId: String(userId) },
-        {
-            $set: {
-                suspended: true,
-                terminated: false,
-                reason,
-                updatedAt: new Date()
-            }
-        },
-        { upsert: true }
-    );
-
-    // Notify user
-    await bot.sendMessage(
-        userId,
-        `⛔ <b>Your access has been suspended</b>\nReason: ${reason}\n\nIf you think this is a mistake, contact support: support@airdlivers.com`,
-        { parse_mode: "HTML" }
-    );
-
-    // Notify admin group
-    await bot.sendMessage(
-        ADMIN_GROUP_ID,
-        `⚠️ User <code>${userId}</code> has been <b>SUSPENDED</b>\nReason: ${reason}`,
-        { parse_mode: "HTML" }
-    );
+  await bot.sendMessage(
+    ADMIN_GROUP_ID,
+    `⚠️ Suspended user <code>${userId}</code>\nReason: ${escapeHtml(reason)}`,
+    { parse_mode: "HTML" }
+  );
 }
 
-
-// Unsuspend user
 async function unsuspendUser(userId) {
-    await userControlCol.updateOne(
-        { userId: String(userId) },
-        { $set: { suspended: false, updatedAt: new Date() } },
-        { upsert: true }
-    );
+  await userControlCol.updateOne(
+    { userId: String(userId) },
+    { $set: { suspended: false, updatedAt: new Date() } }
+  );
 
-    await bot.sendMessage(
-        userId,
-        `🟢 <b>Your suspension has been lifted.</b>\nYou may continue using the bot.\nPress /start to begin.`,
-        { parse_mode: "HTML" }
-    );
+  await bot.sendMessage(
+    userId,
+    `🟢 Your suspension has been removed. Use /start`,
+    { parse_mode: "HTML" }
+  );
 
-    await bot.sendMessage(
-        ADMIN_GROUP_ID,
-        `ℹ️ User <code>${userId}</code> has been <b>UNSUSPENDED</b>.`,
-        { parse_mode: "HTML" }
-    );
+  await bot.sendMessage(
+    ADMIN_GROUP_ID,
+    `ℹ️ User <code>${userId}</code> unsuspended.`,
+    { parse_mode: "HTML" }
+  );
 }
 
+async function terminateChat(userId, type = "completed", reason = "") {
+  let msgOut = "";
 
-// Terminate chat (Completed or Suspicious)
-async function terminateChat(userId, type = "completed", customReason = "") {
-    let message = "";
+  if (type === "completed") {
+    msgOut =
+      `🎉 <b>Delivery Completed</b>\nThank you for using AirDlivers!\n/start`;
+  } else {
+    msgOut =
+      `🚫 <b>Chat terminated (Suspicious)</b>\nReason: ${escapeHtml(reason)}\n/start`;
+  }
 
-    if (type === "completed") {
-        message =
-            `🎉 <b>Delivery Completed</b>\n` +
-            `Your chat session has been closed.\n\n` +
-            `Thank you for using AirDlivers!`;
-    } else if (type === "suspicious") {
-        message =
-            `🚫 <b>Your chat has been terminated due to suspicious activity.</b>\n` +
-            `Reason: ${customReason}\n\n` +
-            `Please restart using /start`;
-    }
+  await userControlCol.updateOne(
+    { userId: String(userId) },
+    {
+      $set: {
+        terminated: true,
+        terminatedReason: msgOut,
+        updatedAt: new Date()
+      }
+    },
+    { upsert: true }
+  );
 
-    await userControlCol.updateOne(
-        { userId: String(userId) },
-        {
-            $set: {
-                terminated: true,
-                terminatedReason: message,
-                updatedAt: new Date()
-            }
-        },
-        { upsert: true }
-    );
+  await bot.sendMessage(userId, msgOut, { parse_mode: "HTML" });
 
-    // notify user
-    await bot.sendMessage(
-        userId,
-        message + `\n\n➡️ Use /start to begin again.`,
-        { parse_mode: "HTML" }
-    );
-
-    // notify admin
-    await bot.sendMessage(
-        ADMIN_GROUP_ID,
-        `🔴 Chat TERMINATED for <code>${userId}</code>\nReason: ${message}`,
-        { parse_mode: "HTML" }
-    );
+  await bot.sendMessage(
+    ADMIN_GROUP_ID,
+    `🛑 Terminated chat of <code>${userId}</code>\nType: ${type}\nReason: ${escapeHtml(reason)}`,
+    { parse_mode: "HTML" }
+  );
 }
-
-
-// ------------------- ADMIN COMMANDS -------------------
 
 bot.onText(/\/suspend (\d+) (.+)/, async (msg, match) => {
-    const adminId = msg.from.id;
-    if (!isAdmin(adminId)) return bot.sendMessage(msg.chat.id, "🔒 Unauthorized.");
+  if (!isAdmin(msg.from.id))
+    return bot.sendMessage(msg.chat.id, "🔒 Unauthorized.");
 
-    const userId = match[1];
-    const reason = match[2];
-
-    await suspendUser(userId, reason);
-    bot.sendMessage(msg.chat.id, `⛔ User ${userId} suspended.`);
+  await suspendUser(match[1], match[2]);
 });
 
 bot.onText(/\/unsuspend (\d+)/, async (msg, match) => {
-    const adminId = msg.from.id;
-    if (!isAdmin(adminId)) return bot.sendMessage(msg.chat.id, "🔒 Unauthorized.");
+  if (!isAdmin(msg.from.id))
+    return bot.sendMessage(msg.chat.id, "🔒 Unauthorized.");
 
-    const userId = match[1];
-    await unsuspendUser(userId);
-    bot.sendMessage(msg.chat.id, `🟢 User ${userId} unsuspended.`);
+  await unsuspendUser(match[1]);
 });
 
 bot.onText(/\/terminate (\d+) (completed|suspicious) ?(.*)?/, async (msg, match) => {
-    const adminId = msg.from.id;
-    if (!isAdmin(adminId)) return bot.sendMessage(msg.chat.id, "🔒 Unauthorized.");
+  if (!isAdmin(msg.from.id))
+    return bot.sendMessage(msg.chat.id, "🔒 Unauthorized.");
 
-    const userId = match[1];
-    const type = match[2];
-    const reason = match[3] || "";
-
-    await terminateChat(userId, type, reason);
-    bot.sendMessage(msg.chat.id, `🔴 User ${userId} chat terminated.`);
+  await terminateChat(match[1], match[2], match[3] || "");
 });
 
-
-// ------------------- GLOBAL MESSAGE BLOCKER -------------------
-
+// BLOCK SUSPENDED USERS GLOBALLY
 bot.on("message", async (msg) => {
-    const userId = msg.from.id;
-    const text = msg.text || "";
+  const userId = msg.from.id;
+  const txt = msg.text || "";
 
-    // Allow admin group always
-    if (String(msg.chat.id) === String(ADMIN_GROUP_ID)) return;
+  if (String(msg.chat.id) === String(ADMIN_GROUP_ID)) return;
+  if (txt.startsWith("/start")) return;
 
-    // Always allow /start (also resets terminated users)
-    if (text.startsWith("/start")) return;
+  if (await isUserSuspended(userId))
+    return bot.sendMessage(userId, "⛔ You are suspended. Contact support.");
 
-    // Block suspended
-    if (await isUserSuspended(userId)) {
-        return bot.sendMessage(
-            userId,
-            `⛔ You are suspended.\nContact support: support@airdlivers.com`,
-            { parse_mode: "HTML" }
-        );
-    }
-
-    // Block terminated chat
-    if (await isChatTerminated(userId)) {
-        return bot.sendMessage(
-            userId,
-            `🔴 Your chat was terminated.\nUse /start to begin again.`,
-            { parse_mode: "HTML" }
-        );
-    }
+  if (await isChatTerminated(userId))
+    return bot.sendMessage(userId, "🔴 Chat terminated. Use /start again.");
 });
 
-console.log("✅ CHUNK 5 loaded: Suspend / Unsuspend / Terminate system active.");
-// ==================================================================
-// CHUNK 6 — INLINE BUTTON HANDLERS (SUSPEND / UNSUSPEND / TERMINATE)
-// ==================================================================
+console.log("✅ CHUNK 5 loaded.");
+// ================================================================
+// CHUNK 6 — INLINE BUTTON HANDLERS (ADMIN CONTROL BUTTONS)
+// ================================================================
 
 bot.on("callback_query", async (query) => {
-    try {
-        const data = query.data;
-        const adminId = query.from.id;
-        const chatId = query.message.chat.id;
+  const data = query.data;
+  const adminId = query.from.id;
+  const chatId = query.message.chat.id;
 
-        // Only admins can handle these
-        if (!isAdmin(adminId)) {
-            await bot.answerCallbackQuery(query.id, { text: "🔒 Not authorized" });
-            return;
-        }
-
-        // -------------------------
-        //  SUSPEND USER
-        // -------------------------
-        if (data.startsWith("suspend_user_")) {
-            const userId = data.replace("suspend_user_", "");
-
-            adminAuth[adminId] = { 
-                ...adminAuth[adminId], 
-                awaitingSuspendReasonFor: userId 
-            };
-
-            await bot.sendMessage(
-                chatId,
-                `📝 Type the REASON for suspending user <code>${userId}</code>:`,
-                { parse_mode: "HTML" }
-            );
-
-            await bot.answerCallbackQuery(query.id);
-            return;
-        }
-
-        // -------------------------
-        //  UNSUSPEND USER
-        // -------------------------
-        if (data.startsWith("unsuspend_user_")) {
-            const userId = data.replace("unsuspend_user_", "");
-
-            await unsuspendUser(userId);
-
-            await bot.answerCallbackQuery(query.id, { text: "User unsuspended." });
-            return;
-        }
-
-        // -------------------------
-        //  TERMINATE CHAT (COMPLETED)
-        // -------------------------
-        if (data.startsWith("terminate_completed_")) {
-            const userId = data.replace("terminate_completed_", "");
-
-            await terminateChat(userId, "completed");
-
-            await bot.answerCallbackQuery(query.id, { text: "Chat marked completed." });
-            return;
-        }
-
-        // -------------------------
-        //  TERMINATE CHAT (SUSPICIOUS)
-        // -------------------------
-        if (data.startsWith("terminate_suspicious_")) {
-            const userId = data.replace("terminate_suspicious_", "");
-
-            adminAuth[adminId] = { 
-                ...adminAuth[adminId], 
-                awaitingTerminateReasonFor: userId 
-            };
-
-            await bot.sendMessage(
-                chatId,
-                `🚨 Type the REASON for suspicious termination of <code>${userId}</code>:`,
-                { parse_mode: "HTML" }
-            );
-
-            await bot.answerCallbackQuery(query.id);
-            return;
-        }
-
-        // fallback
-        await bot.answerCallbackQuery(query.id);
-    } catch (err) {
-        console.error("CHUNK 6 callback error:", err);
-        try {
-            await bot.answerCallbackQuery(query.id, { text: "Error" });
-        } catch (e) {}
+  try {
+    if (!isAdmin(adminId)) {
+      await bot.answerCallbackQuery(query.id, { text: "Not allowed" });
+      return;
     }
+
+    // SUSPEND USER
+    if (data.startsWith("suspend_user_")) {
+      const userId = data.replace("suspend_user_", "");
+      adminAuth[adminId] = {
+        ...adminAuth[adminId],
+        awaitingSuspendReasonFor: userId
+      };
+      await bot.sendMessage(
+        chatId,
+        `✍️ Enter reason for suspending <code>${userId}</code>:`,
+        { parse_mode: "HTML" }
+      );
+      return bot.answerCallbackQuery(query.id);
+    }
+
+    // UNSUSPEND USER
+    if (data.startsWith("unsuspend_user_")) {
+      const userId = data.replace("unsuspend_user_", "");
+      await unsuspendUser(userId);
+      return bot.answerCallbackQuery(query.id, { text: "User unsuspended" });
+    }
+
+    // TERMINATE — COMPLETED
+    if (data.startsWith("terminate_completed_")) {
+      const userId = data.replace("terminate_completed_", "");
+      await terminateChat(userId, "completed");
+      return bot.answerCallbackQuery(query.id, { text: "Chat marked completed" });
+    }
+
+    // TERMINATE — SUSPICIOUS
+    if (data.startsWith("terminate_suspicious_")) {
+      const userId = data.replace("terminate_suspicious_", "");
+      adminAuth[adminId] = {
+        ...adminAuth[adminId],
+        awaitingTerminateReasonFor: userId
+      };
+      await bot.sendMessage(
+        chatId,
+        `🚨 Enter suspicious termination reason for <code>${userId}</code>:`,
+        { parse_mode: "HTML" }
+      );
+      return bot.answerCallbackQuery(query.id);
+    }
+
+    await bot.answerCallbackQuery(query.id);
+  } catch (err) {
+    console.error("Callback Error:", err);
+  }
 });
-// ==================================================================
-// CHUNK 7 — ADMIN TYPED REASON HANDLER
-// (Handles suspend reason + suspicious termination reason)
-// ==================================================================
+
+
+// ================================================================
+// CHUNK 7 — ADMIN REASON INPUT HANDLER
+// ================================================================
 
 bot.on("message", async (msg) => {
-    try {
-        const chatId = msg.chat.id;
-        const adminId = msg.from.id;
-        const text = (msg.text || "").trim();
+  const chatId = msg.chat.id;
+  const adminId = msg.from.id;
+  const text = (msg.text || "").trim();
 
-        // Only inside admin group
-        if (String(chatId) !== String(ADMIN_GROUP_ID)) return;
+  if (String(chatId) !== String(ADMIN_GROUP_ID)) return;
 
-        // -------------------------------------------------------
-        // 1) Admin typed SUSPEND reason
-        // -------------------------------------------------------
-        if (adminAuth[adminId]?.awaitingSuspendReasonFor) {
-            const userId = adminAuth[adminId].awaitingSuspendReasonFor;
-            const reason = text;
+  // SUSPEND — typed reason
+  if (adminAuth[adminId]?.awaitingSuspendReasonFor) {
+    const userId = adminAuth[adminId].awaitingSuspendReasonFor;
+    await suspendUser(userId, text);
+    delete adminAuth[adminId].awaitingSuspendReasonFor;
 
-            await suspendUser(userId, reason);
+    return bot.sendMessage(
+      chatId,
+      `🚫 Suspended <code>${userId}</code>\nReason: ${escapeHtml(text)}`,
+      { parse_mode: "HTML" }
+    );
+  }
 
-            delete adminAuth[adminId].awaitingSuspendReasonFor;
+  // TERMINATE — typed reason
+  if (adminAuth[adminId]?.awaitingTerminateReasonFor) {
+    const userId = adminAuth[adminId].awaitingTerminateReasonFor;
+    await terminateChat(userId, "suspicious", text);
+    delete adminAuth[adminId].awaitingTerminateReasonFor;
 
-            await bot.sendMessage(
-                chatId,
-                `🚫 User <code>${userId}</code> SUSPENDED.\nReason: ${escapeHtml(reason)}`,
-                { parse_mode: "HTML" }
-            );
-
-            return;
-        }
-
-        // -------------------------------------------------------
-        // 2) Admin typed TERMINATE (Suspicious) reason
-        // -------------------------------------------------------
-        if (adminAuth[adminId]?.awaitingTerminateReasonFor) {
-            const userId = adminAuth[adminId].awaitingTerminateReasonFor;
-            const reason = text;
-
-            await terminateChat(userId, "suspicious", reason);
-
-            delete adminAuth[adminId].awaitingTerminateReasonFor;
-
-            await bot.sendMessage(
-                chatId,
-                `🚨 Chat terminated for <code>${userId}</code> (Suspicious)\nReason: ${escapeHtml(reason)}`,
-                { parse_mode: "HTML" }
-            );
-
-            return;
-        }
-
-    } catch (err) {
-        console.error("CHUNK 7 error:", err);
-    }
+    return bot.sendMessage(
+      chatId,
+      `🛑 Chat terminated for <code>${userId}</code>\nReason: ${escapeHtml(text)}`,
+      { parse_mode: "HTML" }
+    );
+  }
 });
-// ==================================================================
-// CHUNK 8 — CORE FUNCTIONS: suspend, unsuspend, terminate chat
-// ==================================================================
 
-/**
- * Suspend a user (cannot send messages, photos, or use menu)
- * @param {number|string} userId 
- * @param {string} reason 
- */
-async function suspendUser(userId, reason) {
-    userId = String(userId);
 
-    // Sender doc
-    await sendersCol.updateMany(
-        { userId },
-        { $set: { suspended: true, suspendReason: reason, suspendedAt: new Date() } }
-    );
+// ================================================================
+// CHUNK 8 — CONFIRM KEYBOARD
+// ================================================================
 
-    // Traveler doc
-    await travelersCol.updateMany(
-        { userId },
-        { $set: { suspended: true, suspendReason: reason, suspendedAt: new Date() } }
-    );
-
-    // Notify user
-    try {
-        await bot.sendMessage(
-            userId,
-            `🚫 <b>Your access is temporarily suspended.</b>\n\nReason: ${escapeHtml(reason)}\n\n` +
-            `If you believe this is a mistake, contact support:\n` +
-            `📩 support@airdlivers.com\n\n/start to reset.`,
-            { parse_mode: "HTML" }
-        );
-    } catch (e) { }
+function confirmKeyboard(role, requestId) {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "✅ Confirm & Submit", callback_data: `confirm_${role}_${requestId}` }],
+        [{ text: "❌ Cancel", callback_data: "cancel_flow" }]
+      ]
+    }
+  };
 }
 
 
-/**
- * Unsuspend user (restore access)
- * @param {number|string} userId 
- */
-async function unsuspendUser(userId) {
-    userId = String(userId);
+// ================================================================
+// CHUNK 9 — SENDER FLOW (Full)
+// ================================================================
 
-    await sendersCol.updateMany(
-        { userId },
-        { $unset: { suspended: "", suspendReason: "", suspendedAt: "" } }
-    );
+async function handleSenderTextStep(chatId, text) {
+  const sess = userSessions[chatId];
+  if (!sess) return;
 
-    await travelersCol.updateMany(
-        { userId },
-        { $unset: { suspended: "", suspendReason: "", suspendedAt: "" } }
-    );
+  const data = sess.data;
+  const cleaned = text.trim();
 
-    // Notify user
-    try {
-        await bot.sendMessage(
-            userId,
-            `✅ <b>Your access to AirDlivers has been restored.</b>\n\nYou may continue using the service.\n/start`,
-            { parse_mode: "HTML" }
-        );
-    } catch (e) { }
-}
+  switch (sess.step) {
+    case 'sender_name':
+      if (cleaned.length < 2)
+        return bot.sendMessage(chatId, "Enter a valid name.");
+      data.name = cleaned;
+      sess.step = 'sender_phone';
+      return bot.sendMessage(chatId, "📞 Enter Phone (+911234...):");
 
+    case 'sender_phone':
+      if (!isValidPhone(cleaned))
+        return bot.sendMessage(chatId, "Invalid number. Format +911234...");
+      data.phone = cleaned;
+      sess.step = 'sender_email';
+      return bot.sendMessage(chatId, "📧 Enter Email:");
 
-/**
- * Terminate Chat (completed or suspicious)
- * @param {number|string} userId 
- * @param {'completed' | 'suspicious'} type
- * @param {string} reason
- */
-async function terminateChat(userId, type, reason = "") {
-    userId = String(userId);
+    case 'sender_email':
+      if (!isValidEmail(cleaned))
+        return bot.sendMessage(chatId, "Invalid email.");
+      data.email = cleaned;
+      sess.step = 'pickup_airport';
+      return bot.sendMessage(chatId, "🛫 Enter Pickup Airport:");
 
-    // Find user (sender or traveler)
-    const senderDoc = await sendersCol.findOne({ userId, matchLocked: true });
-    const travelerDoc = await travelersCol.findOne({ userId, matchLocked: true });
+    case 'pickup_airport':
+      data.pickupAirport = cleaned;
+      sess.step = 'destination_airport';
+      return bot.sendMessage(chatId, "🛬 Enter Destination Airport:");
 
-    let myDoc = senderDoc || travelerDoc;
-    if (!myDoc) return; // No active match
+    case 'destination_airport':
+      data.destinationAirport = cleaned;
+      sess.step = 'weight';
+      return bot.sendMessage(chatId, "⚖️ Enter Weight (kg):");
 
-    const otherCol = myDoc.role === "sender" ? travelersCol : sendersCol;
-    const myCol = myDoc.role === "sender" ? sendersCol : travelersCol;
+    case 'weight':
+      const num = Number(cleaned);
+      if (isNaN(num) || num <= 0)
+        return bot.sendMessage(chatId, "Enter a valid kg.");
+      data.weight = num;
+      sess.step = 'category';
+      return bot.sendMessage(chatId, "📦 Enter Category:");
 
-    if (!myDoc.matchedWith) return;
+    case 'category':
+      data.category = cleaned;
+      sess.step = 'send_date';
+      return bot.sendMessage(chatId, "📅 Enter Send Date (DD-MM-YYYY):");
 
-    const otherDoc = await otherCol.findOne({ requestId: myDoc.matchedWith });
-
-    // Clear match for both
-    await clearMatchBetween(myDoc, otherDoc);
-
-    // Notify both users
-    if (type === "completed") {
-        await bot.sendMessage(
-            userId,
-            `🎉 <b>Your delivery chat has been closed successfully.</b>\nThank you for using AirDlivers!`,
-            { parse_mode: "HTML" }
-        );
-        if (otherDoc) {
-            await bot.sendMessage(
-                otherDoc.userId,
-                `🎉 <b>Your delivery chat has been closed successfully.</b>\nThank you for using AirDlivers!`,
-                { parse_mode: "HTML" }
-            );
-        }
+    case 'send_date': {
+      const dt = parseDate_ddmmyyyy(cleaned);
+      if (!dt)
+        return bot.sendMessage(chatId, "Invalid date format.");
+      data.sendDate = moment(dt).format("DD-MM-YYYY");
+      sess.step = 'arrival_date';
+      return bot.sendMessage(chatId, "📅 Enter Arrival Date (DD-MM-YYYY):");
     }
 
-    if (type === "suspicious") {
-        await bot.sendMessage(
-            userId,
-            `⚠️ <b>Your chat was terminated due to suspicious activity.</b>\nReason: ${escapeHtml(reason)}\n\nYou may restart using /start`,
-            { parse_mode: "HTML" }
-        );
-
-        if (otherDoc) {
-            await bot.sendMessage(
-                otherDoc.userId,
-                `⚠️ <b>The chat with your match has been terminated by admin due to suspicious activity.</b>\nPlease return to /start`,
-                { parse_mode: "HTML" }
-            );
-        }
+    case 'arrival_date': {
+      const dt = parseDate_ddmmyyyy(cleaned);
+      if (!dt)
+        return bot.sendMessage(chatId, "Invalid date.");
+      data.arrivalDate = moment(dt).format("DD-MM-YYYY");
+      sess.expectingPhoto = "package_photo";
+      sess.step = "package_photo";
+      return bot.sendMessage(chatId, "📸 Upload Package Photo:");
     }
 
-    // Log to admin group
-    await bot.sendMessage(
-        ADMIN_GROUP_ID,
-        `🛑 <b>Chat terminated</b>\nUser: <code>${userId}</code>\nType: ${escapeHtml(type)}\nReason: ${escapeHtml(reason)}`,
-        { parse_mode: "HTML" }
-    );
+    case 'package_photo':
+      return; // handled by photo handler
+
+    case 'id_selfie':
+      return; // handled by photo handler
+
+    case 'optional_notes':
+      data.notes = cleaned === 'none' ? "" : cleaned;
+      sess.requestId = makeRequestId("snd");
+      sess.step = "confirm_sender";
+
+      let summary =
+        `<b>📦 Sender Summary</b>\n\n` +
+        `<b>ID:</b> <code>${sess.requestId}</code>\n` +
+        `<b>Name:</b> ${escapeHtml(data.name)}\n` +
+        `<b>Phone:</b> ${escapeHtml(data.phone)}\n` +
+        `<b>Email:</b> ${escapeHtml(data.email)}\n` +
+        `<b>From:</b> ${escapeHtml(data.pickupAirport)}\n` +
+        `<b>To:</b> ${escapeHtml(data.destinationAirport)}\n` +
+        `<b>Weight:</b> ${escapeHtml(String(data.weight))} kg\n` +
+        `<b>Category:</b> ${escapeHtml(data.category)}\n` +
+        `<b>Send:</b> ${escapeHtml(data.sendDate)}\n` +
+        `<b>Arrival:</b> ${escapeHtml(data.arrivalDate)}\n`;
+
+      if (data.notes) summary += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
+
+      return bot.sendMessage(chatId, summary, {
+        parse_mode: "HTML",
+        ...confirmKeyboard("sender", sess.requestId)
+      });
+
+    default:
+      return;
+  }
 }
 
 
-/**
- * Helper: Clear match linkage between sender & traveler
- */
-async function clearMatchBetween(docA, docB) {
-    if (!docA) return;
-    const colA = docA.role === "sender" ? sendersCol : travelersCol;
-
-    await colA.updateOne(
-        { requestId: docA.requestId },
-        {
-            $unset: {
-                matchedWith: "",
-                pendingMatchWith: "",
-                matchLocked: ""
-            }
-        }
-    );
-
-    if (docB) {
-        const colB = docB.role === "sender" ? sendersCol : travelersCol;
-        await colB.updateOne(
-            { requestId: docB.requestId },
-            {
-                $unset: {
-                    matchedWith: "",
-                    pendingMatchWith: "",
-                    matchLocked: ""
-                }
-            }
-        );
-    }
-}
-// =======================================================
-// CHUNK 10 — FIXED TRAVELER FLOW (Email + Validations)
-// =======================================================
+// ================================================================
+// CHUNK 10 — TRAVELER FLOW (Full)
+// ================================================================
 
 async function handleTravelerTextStep(chatId, text) {
   const sess = userSessions[chatId];
@@ -909,116 +701,469 @@ async function handleTravelerTextStep(chatId, text) {
   const cleaned = text.trim();
 
   switch (sess.step) {
-
     case 'traveler_name':
       if (cleaned.length < 2)
-        return bot.sendMessage(chatId, 'Please enter a valid full name.');
+        return bot.sendMessage(chatId, "Enter a valid name.");
       data.name = cleaned;
       sess.step = 'traveler_phone';
-      return bot.sendMessage(chatId, '📞 Enter Phone (Example: +911234567890):');
+      return bot.sendMessage(chatId, "📞 Enter Phone:");
 
     case 'traveler_phone':
       if (!isValidPhone(cleaned))
-        return bot.sendMessage(chatId, '❌ Invalid phone. Use format +911234567890');
+        return bot.sendMessage(chatId, "Invalid phone format.");
       data.phone = cleaned;
       sess.step = 'traveler_email';
-      return bot.sendMessage(chatId, '📧 Enter Email:');
+      return bot.sendMessage(chatId, "📧 Enter Email:");
 
     case 'traveler_email':
       if (!isValidEmail(cleaned))
-        return bot.sendMessage(chatId, '❌ Invalid email. Please try again.');
+        return bot.sendMessage(chatId, "Invalid email.");
       data.email = cleaned;
       sess.step = 'departure_airport';
-      return bot.sendMessage(chatId, '🛫 Enter Departure Airport (From):');
+      return bot.sendMessage(chatId, "🛫 Enter Departure Airport:");
 
     case 'departure_airport':
       data.departure = cleaned;
       sess.step = 'departure_country';
-      return bot.sendMessage(chatId, '🌍 Enter Departure Country:');
+      return bot.sendMessage(chatId, "🌍 Enter Departure Country:");
 
     case 'departure_country':
       data.departureCountry = cleaned;
       sess.step = 'destination_airport';
-      return bot.sendMessage(chatId, '🛬 Enter Destination Airport (To):');
+      return bot.sendMessage(chatId, "🛬 Enter Destination Airport:");
 
     case 'destination_airport':
       data.destination = cleaned;
       sess.step = 'arrival_country';
-      return bot.sendMessage(chatId, '🌍 Enter Arrival Country:');
+      return bot.sendMessage(chatId, "🌍 Enter Arrival Country:");
 
     case 'arrival_country':
       data.arrivalCountry = cleaned;
       sess.step = 'departure_time';
-      return bot.sendMessage(chatId, '⏰ Enter Departure (DD-MM-YY HH:mm):');
+      return bot.sendMessage(chatId, "⏰ Enter Departure Time (DD-MM-YY HH:mm):");
 
     case 'departure_time': {
-      const dt = parseDate_ddmmyy_hhmm(cleaned);
-      if (!dt)
-        return bot.sendMessage(chatId, 'Invalid format. Use DD-MM-YY HH:mm');
-      data.departureTime = moment(dt).format('DD-MM-YY HH:mm');
+      const d = parseDate_ddmmyy_hhmm(cleaned);
+      if (!d)
+        return bot.sendMessage(chatId, "Invalid format. Use DD-MM-YY HH:mm");
+      data.departureTime = moment(d).format("DD-MM-YY HH:mm");
       sess.step = 'arrival_time';
-      return bot.sendMessage(chatId, '⏰ Enter Arrival (DD-MM-YY HH:mm):');
+      return bot.sendMessage(chatId, "⏰ Enter Arrival Time (DD-MM-YY HH:mm):");
     }
 
     case 'arrival_time': {
-      const dt = parseDate_ddmmyy_hhmm(cleaned);
-      if (!dt)
-        return bot.sendMessage(chatId, 'Invalid format. Use DD-MM-YY HH:mm');
-      data.arrivalTime = moment(dt).format('DD-MM-YY HH:mm');
+      const d = parseDate_ddmmyy_hhmm(cleaned);
+      if (!d)
+        return bot.sendMessage(chatId, "Invalid date.");
+      data.arrivalTime = moment(d).format("DD-MM-YY HH:mm");
       sess.step = 'available_weight';
-      return bot.sendMessage(chatId, '⚖️ Enter Available Weight in kg (Max 10kg):');
+      return bot.sendMessage(chatId, "⚖️ Enter Available Weight (Max 10kg):");
     }
 
-    case 'available_weight': {
+    case 'available_weight':
       const num = Number(cleaned);
-      if (isNaN(num) || num <= 0)
-        return bot.sendMessage(chatId, 'Please enter a valid positive number.');
-      if (num > 10)
-        return bot.sendMessage(chatId, '❌ Max weight is 10kg.');
+      if (isNaN(num) || num <= 0 || num > 10)
+        return bot.sendMessage(chatId, "Weight must be 1–10kg");
       data.availableWeight = num;
       sess.step = 'passport_number';
-      return bot.sendMessage(chatId, '🛂 Enter Passport Number (Example: L7982227):');
-    }
+      return bot.sendMessage(chatId, "🛂 Enter Passport Number:");
 
     case 'passport_number':
-      if (!/^[A-Za-z0-9]{6,10}$/.test(cleaned))
-        return bot.sendMessage(chatId, 'Invalid passport format. Try again.');
       data.passportNumber = cleaned;
-      sess.expectingPhoto = 'passport_selfie';
+      sess.expectingPhoto = "passport_selfie";
       sess.step = 'passport_selfie';
-      return bot.sendMessage(chatId, '📸 Upload a selfie holding your passport (mandatory):');
+      return bot.sendMessage(chatId, "📸 Upload Selfie holding Passport:");
 
     case 'passport_selfie':
-      return; // handled by photo handler
+      return;
 
     case 'itinerary_photo':
-      return; // handled by photo handler
+      return;
 
     case 'optional_notes':
-      data.notes = cleaned.toLowerCase() === 'none' ? '' : cleaned;
-      sess.requestId = makeRequestId('trv');
-      sess.step = 'confirm_pending';
+      data.notes = cleaned === 'none' ? "" : cleaned;
+      sess.requestId = makeRequestId("trv");
+      sess.step = "confirm_traveler";
 
-      let summary = `<b>🧳 Traveler Summary</b>\n\n`;
-      summary += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
-      summary += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
-      summary += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
-      summary += `<b>Email:</b> ${escapeHtml(data.email)}\n`;
-      summary += `<b>From:</b> ${escapeHtml(data.departure)} (${escapeHtml(data.departureCountry)})\n`;
-      summary += `<b>To:</b> ${escapeHtml(data.destination)} (${escapeHtml(data.arrivalCountry)})\n`;
-      summary += `<b>Departure:</b> ${escapeHtml(data.departureTime)}\n`;
-      summary += `<b>Arrival:</b> ${escapeHtml(data.arrivalTime)}\n`;
-      summary += `<b>Capacity:</b> ${escapeHtml(String(data.availableWeight))} kg\n`;
-      summary += `<b>Passport:</b> ${escapeHtml(data.passportNumber)}\n`;
+      let summary =
+        `<b>🧳 Traveler Summary</b>\n\n` +
+        `<b>ID:</b> <code>${sess.requestId}</code>\n` +
+        `<b>Name:</b> ${escapeHtml(data.name)}\n` +
+        `<b>Phone:</b> ${escapeHtml(data.phone)}\n` +
+        `<b>Email:</b> ${escapeHtml(data.email)}\n` +
+        `<b>From:</b> ${escapeHtml(data.departure)} (${escapeHtml(data.departureCountry)})\n` +
+        `<b>To:</b> ${escapeHtml(data.destination)} (${escapeHtml(data.arrivalCountry)})\n` +
+        `<b>Dep:</b> ${escapeHtml(data.departureTime)}\n` +
+        `<b>Arr:</b> ${escapeHtml(data.arrivalTime)}\n` +
+        `<b>Capacity:</b> ${escapeHtml(String(data.availableWeight))} kg\n` +
+        `<b>Passport:</b> ${escapeHtml(data.passportNumber)}\n`;
+
       if (data.notes) summary += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
 
-      await bot.sendMessage(chatId, summary, {
-        parse_mode: 'HTML',
-        ...confirmKeyboard('traveler', sess.requestId)
+      return bot.sendMessage(chatId, summary, {
+        parse_mode: "HTML",
+        ...confirmKeyboard("traveler", sess.requestId)
       });
-      return;
 
     default:
       return;
   }
 }
+
+
+// ================================================================
+// CHUNK 11 — PHOTO HANDLER
+// ================================================================
+
+bot.on("photo", async (msg) => {
+  const chatId = msg.chat.id;
+  const sess = userSessions[chatId];
+  if (!sess) return;
+
+  const photoId = msg.photo[msg.photo.length - 1].file_id;
+
+  if (sess.expectingPhoto === "package_photo") {
+    sess.data.packagePhoto = photoId;
+    sess.expectingPhoto = "id_selfie";
+    sess.step = "id_selfie";
+    return bot.sendMessage(chatId, "📸 Upload Selfie holding ID:");
+  }
+
+  if (sess.expectingPhoto === "id_selfie") {
+    sess.data.idSelfie = photoId;
+    sess.step = "optional_notes";
+    sess.expectingPhoto = null;
+    return bot.sendMessage(chatId, "📝 Add Extra Notes (or type: none):");
+  }
+
+  if (sess.expectingPhoto === "passport_selfie") {
+    sess.data.passportSelfie = photoId;
+    sess.expectingPhoto = "itinerary_photo";
+    sess.step = "itinerary_photo";
+    return bot.sendMessage(chatId, "📄 Upload Itinerary / Ticket:");
+  }
+
+  if (sess.expectingPhoto === "itinerary_photo") {
+    sess.data.itinerary = photoId;
+    sess.expectingPhoto = null;
+    sess.step = "optional_notes";
+    return bot.sendMessage(chatId, "📝 Add Extra Notes (or type: none):");
+  }
+});
+
+
+// ================================================================
+// CHUNK 12 — AUTO MATCHING ENGINE
+// ================================================================
+
+async function attemptAutoMatchSender(senderDoc) {
+  const matches = await travelersCol
+    .find({
+      destination: senderDoc.destinationAirport,
+      departure: senderDoc.pickupAirport,
+      availableWeight: { $gte: senderDoc.weight },
+      matchLocked: { $ne: true }
+    })
+    .toArray();
+
+  if (!matches.length) return;
+
+  const traveller = matches[0];
+
+  await sendersCol.updateOne(
+    { requestId: senderDoc.requestId },
+    { $set: { pendingMatchWith: traveller.requestId } }
+  );
+
+  await travelersCol.updateOne(
+    { requestId: traveller.requestId },
+    { $set: { pendingMatchWith: senderDoc.requestId } }
+  );
+
+  await bot.sendMessage(
+    traveller.userId,
+    `🔔 A new sender may match your trip!\nUse /start to check.`
+  );
+
+  await bot.sendMessage(
+    senderDoc.userId,
+    `🔔 A traveler is available. Waiting for confirmation...`
+  );
+}
+
+async function attemptAutoMatchTraveler(travellerDoc) {
+  const matches = await sendersCol
+    .find({
+      pickupAirport: travellerDoc.departure,
+      destinationAirport: travellerDoc.destination,
+      weight: { $lte: travellerDoc.availableWeight },
+      matchLocked: { $ne: true }
+    })
+    .toArray();
+
+  if (!matches.length) return;
+
+  const sender = matches[0];
+
+  await sendersCol.updateOne(
+    { requestId: sender.requestId },
+    { $set: { pendingMatchWith: travellerDoc.requestId } }
+  );
+
+  await travelersCol.updateOne(
+    { requestId: travellerDoc.requestId },
+    { $set: { pendingMatchWith: sender.requestId } }
+  );
+
+  await bot.sendMessage(
+    travellerDoc.userId,
+    `🔔 A sender matches your route!`
+  );
+
+  await bot.sendMessage(
+    sender.userId,
+    `🔔 A traveler is available!`
+  );
+}
+
+console.log("✅ Part 3 loaded.");
+// ================================================================
+// CHUNK 13 — CONFIRMATION HANDLERS (SENDER / TRAVELER)
+// ================================================================
+
+bot.on("callback_query", async (query) => {
+  const data = query.data;
+  const chatId = query.message.chat.id;
+  const userId = query.from.id;
+
+  try {
+    // -----------------------------
+    // CANCEL FLOW
+    // -----------------------------
+    if (data === "cancel_flow") {
+      delete userSessions[chatId];
+      await bot.sendMessage(chatId, "❌ Process cancelled.\n/start to begin again.");
+      return bot.answerCallbackQuery(query.id);
+    }
+
+    // -----------------------------
+    // CONFIRM SENDER
+    // -----------------------------
+    if (data.startsWith("confirm_sender_")) {
+      const requestId = data.replace("confirm_sender_", "");
+      const sess = userSessions[chatId];
+      if (!sess) return;
+
+      const doc = {
+        ...sess.data,
+        userId,
+        role: "sender",
+        requestId,
+        createdAt: new Date()
+      };
+
+      await sendersCol.insertOne(doc);
+      await backupSenderJSON(doc);
+
+      await bot.sendMessage(
+        chatId,
+        `🎉 <b>Your package request is submitted!</b>\nRequest ID: <code>${requestId}</code>\nWe are matching you with travelers.`,
+        { parse_mode: "HTML" }
+      );
+
+      // Notify admin
+      await bot.sendMessage(
+        ADMIN_GROUP_ID,
+        `📦 <b>New Sender Request</b>\nID: <code>${requestId}</code>\nUser: <code>${userId}</code>`,
+        { parse_mode: "HTML" }
+      );
+
+      // Auto-match attempt
+      await attemptAutoMatchSender(doc);
+
+      delete userSessions[chatId];
+      return bot.answerCallbackQuery(query.id);
+    }
+
+    // -----------------------------
+    // CONFIRM TRAVELER
+    // -----------------------------
+    if (data.startsWith("confirm_traveler_")) {
+      const requestId = data.replace("confirm_traveler_", "");
+      const sess = userSessions[chatId];
+      if (!sess) return;
+
+      const doc = {
+        ...sess.data,
+        userId,
+        role: "traveler",
+        requestId,
+        createdAt: new Date()
+      };
+
+      await travelersCol.insertOne(doc);
+      await backupTravelerJSON(doc);
+
+      await bot.sendMessage(
+        chatId,
+        `🧳 <b>Your travel details are submitted!</b>\nRequest ID: <code>${requestId}</code>\nWe will match you with senders.`,
+        { parse_mode: "HTML" }
+      );
+
+      // Notify admin
+      await bot.sendMessage(
+        ADMIN_GROUP_ID,
+        `🧳 <b>New Traveler</b>\nID: <code>${requestId}</code>\nUser: <code>${userId}</code>`,
+        { parse_mode: "HTML" }
+      );
+
+      // Auto-match attempt
+      await attemptAutoMatchTraveler(doc);
+
+      delete userSessions[chatId];
+      return bot.answerCallbackQuery(query.id);
+    }
+
+    // -----------------------------
+    await bot.answerCallbackQuery(query.id);
+  } catch (err) {
+    console.error("Error in confirmation handler:", err);
+  }
+});
+
+
+// ================================================================
+// CHUNK 14 — ACTIVE MATCH CHAT ROUTING SYSTEM
+// ================================================================
+// This allows matched Sender & Traveler to chat safely with hidden personal data.
+
+async function getActiveMatch(userId) {
+  const s = await sendersCol.findOne({ userId: String(userId), matchLocked: true });
+  if (s) return s;
+  const t = await travelersCol.findOne({ userId: String(userId), matchLocked: true });
+  return t || null;
+}
+
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  const text = msg.text || "";
+
+  // Ignore admin group & /start handled above
+  if (String(chatId) === String(ADMIN_GROUP_ID)) return;
+  if (text.startsWith("/start")) return;
+
+  // Check suspended or terminated
+  if (await isUserSuspended(userId)) {
+    return bot.sendMessage(
+      chatId,
+      `⛔ You are suspended.\nContact support@airdlivers.com`,
+      { parse_mode: "HTML" }
+    );
+  }
+  if (await isChatTerminated(userId)) {
+    return bot.sendMessage(
+      chatId,
+      `🔴 Chat terminated.\nUse /start to continue.`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  // -----------------------------
+  // If user is in a MATCHED chat
+  // -----------------------------
+  const myDoc = await getActiveMatch(userId);
+  if (!myDoc) return; // Not matched yet
+
+  const otherCol = myDoc.role === "sender" ? travelersCol : sendersCol;
+  const otherDoc = await otherCol.findOne({ requestId: myDoc.matchedWith });
+
+  if (!otherDoc) return;
+
+  // Forward text/photo to matched user
+  if (msg.text) {
+    await bot.sendMessage(otherDoc.userId, `💬 ${text}`);
+  }
+  if (msg.photo) {
+    const fileId = msg.photo[msg.photo.length - 1].file_id;
+    await bot.sendPhoto(otherDoc.userId, fileId);
+  }
+});
+
+
+// ================================================================
+// CHUNK 15 — RECEIVE MATCH CONFIRMATIONS
+// ================================================================
+
+bot.on("callback_query", async (query) => {
+  const data = query.data;
+  const chatId = query.message.chat.id;
+  const userId = query.from.id;
+
+  try {
+    if (data.startsWith("accept_match_")) {
+      const requestId = data.replace("accept_match_", "");
+      const isSender = requestId.startsWith("snd");
+
+      const myCol = isSender ? sendersCol : travelersCol;
+      const otherCol = isSender ? travelersCol : sendersCol;
+
+      const myDoc = await myCol.findOne({ requestId });
+      if (!myDoc) return;
+
+      const otherDoc = await otherCol.findOne({ requestId: myDoc.pendingMatchWith });
+      if (!otherDoc) return;
+
+      await myCol.updateOne({ requestId }, { $set: { matchLocked: true, matchedWith: otherDoc.requestId } });
+      await otherCol.updateOne({ requestId: otherDoc.requestId }, { $set: { matchLocked: true, matchedWith: myDoc.requestId } });
+
+      await bot.sendMessage(
+        userId,
+        `✅ <b>Match Confirmed!</b>\nYou can now chat directly.`,
+        { parse_mode: "HTML" }
+      );
+
+      await bot.sendMessage(
+        otherDoc.userId,
+        `🔔 Your match confirmed! You can chat now.`,
+        { parse_mode: "HTML" }
+      );
+
+      return bot.answerCallbackQuery(query.id);
+    }
+
+    if (data.startsWith("reject_match_")) {
+      const requestId = data.replace("reject_match_", "");
+      const isSender = requestId.startsWith("snd");
+
+      const myCol = isSender ? sendersCol : travelersCol;
+      const otherCol = isSender ? travelersCol : sendersCol;
+
+      const myDoc = await myCol.findOne({ requestId });
+      const otherDoc = await otherCol.findOne({ requestId: myDoc.pendingMatchWith });
+
+      if (myDoc)
+        await myCol.updateOne({ requestId }, { $unset: { pendingMatchWith: "" } });
+      if (otherDoc)
+        await otherCol.updateOne({ requestId: otherDoc.requestId }, { $unset: { pendingMatchWith: "" } });
+
+      await bot.sendMessage(chatId, "❌ Match rejected.");
+      await bot.answerCallbackQuery(query.id);
+
+      if (otherDoc) {
+        await bot.sendMessage(otherDoc.userId, "⚠️ Your match was rejected. Searching again...");
+      }
+
+      return;
+    }
+
+  } catch (err) {
+    console.error("Match decision error:", err);
+  }
+});
+
+
+// ================================================================
+// CHUNK 16 — WEBHOOK READY
+// ================================================================
+console.log("🚀 AirDlivers Bot fully loaded & running via Webhook!");
