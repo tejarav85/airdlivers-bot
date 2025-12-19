@@ -897,3 +897,128 @@ async function clearMatchBetween(docA, docB) {
         );
     }
 }
+// =======================================================
+// CHUNK 10 — FIXED TRAVELER FLOW (Email + Validations)
+// =======================================================
+
+async function handleTravelerTextStep(chatId, text) {
+  const sess = userSessions[chatId];
+  if (!sess) return;
+
+  const data = sess.data;
+  const cleaned = text.trim();
+
+  switch (sess.step) {
+
+    case 'traveler_name':
+      if (cleaned.length < 2)
+        return bot.sendMessage(chatId, 'Please enter a valid full name.');
+      data.name = cleaned;
+      sess.step = 'traveler_phone';
+      return bot.sendMessage(chatId, '📞 Enter Phone (Example: +911234567890):');
+
+    case 'traveler_phone':
+      if (!isValidPhone(cleaned))
+        return bot.sendMessage(chatId, '❌ Invalid phone. Use format +911234567890');
+      data.phone = cleaned;
+      sess.step = 'traveler_email';
+      return bot.sendMessage(chatId, '📧 Enter Email:');
+
+    case 'traveler_email':
+      if (!isValidEmail(cleaned))
+        return bot.sendMessage(chatId, '❌ Invalid email. Please try again.');
+      data.email = cleaned;
+      sess.step = 'departure_airport';
+      return bot.sendMessage(chatId, '🛫 Enter Departure Airport (From):');
+
+    case 'departure_airport':
+      data.departure = cleaned;
+      sess.step = 'departure_country';
+      return bot.sendMessage(chatId, '🌍 Enter Departure Country:');
+
+    case 'departure_country':
+      data.departureCountry = cleaned;
+      sess.step = 'destination_airport';
+      return bot.sendMessage(chatId, '🛬 Enter Destination Airport (To):');
+
+    case 'destination_airport':
+      data.destination = cleaned;
+      sess.step = 'arrival_country';
+      return bot.sendMessage(chatId, '🌍 Enter Arrival Country:');
+
+    case 'arrival_country':
+      data.arrivalCountry = cleaned;
+      sess.step = 'departure_time';
+      return bot.sendMessage(chatId, '⏰ Enter Departure (DD-MM-YY HH:mm):');
+
+    case 'departure_time': {
+      const dt = parseDate_ddmmyy_hhmm(cleaned);
+      if (!dt)
+        return bot.sendMessage(chatId, 'Invalid format. Use DD-MM-YY HH:mm');
+      data.departureTime = moment(dt).format('DD-MM-YY HH:mm');
+      sess.step = 'arrival_time';
+      return bot.sendMessage(chatId, '⏰ Enter Arrival (DD-MM-YY HH:mm):');
+    }
+
+    case 'arrival_time': {
+      const dt = parseDate_ddmmyy_hhmm(cleaned);
+      if (!dt)
+        return bot.sendMessage(chatId, 'Invalid format. Use DD-MM-YY HH:mm');
+      data.arrivalTime = moment(dt).format('DD-MM-YY HH:mm');
+      sess.step = 'available_weight';
+      return bot.sendMessage(chatId, '⚖️ Enter Available Weight in kg (Max 10kg):');
+    }
+
+    case 'available_weight': {
+      const num = Number(cleaned);
+      if (isNaN(num) || num <= 0)
+        return bot.sendMessage(chatId, 'Please enter a valid positive number.');
+      if (num > 10)
+        return bot.sendMessage(chatId, '❌ Max weight is 10kg.');
+      data.availableWeight = num;
+      sess.step = 'passport_number';
+      return bot.sendMessage(chatId, '🛂 Enter Passport Number (Example: L7982227):');
+    }
+
+    case 'passport_number':
+      if (!/^[A-Za-z0-9]{6,10}$/.test(cleaned))
+        return bot.sendMessage(chatId, 'Invalid passport format. Try again.');
+      data.passportNumber = cleaned;
+      sess.expectingPhoto = 'passport_selfie';
+      sess.step = 'passport_selfie';
+      return bot.sendMessage(chatId, '📸 Upload a selfie holding your passport (mandatory):');
+
+    case 'passport_selfie':
+      return; // handled by photo handler
+
+    case 'itinerary_photo':
+      return; // handled by photo handler
+
+    case 'optional_notes':
+      data.notes = cleaned.toLowerCase() === 'none' ? '' : cleaned;
+      sess.requestId = makeRequestId('trv');
+      sess.step = 'confirm_pending';
+
+      let summary = `<b>🧳 Traveler Summary</b>\n\n`;
+      summary += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
+      summary += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
+      summary += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
+      summary += `<b>Email:</b> ${escapeHtml(data.email)}\n`;
+      summary += `<b>From:</b> ${escapeHtml(data.departure)} (${escapeHtml(data.departureCountry)})\n`;
+      summary += `<b>To:</b> ${escapeHtml(data.destination)} (${escapeHtml(data.arrivalCountry)})\n`;
+      summary += `<b>Departure:</b> ${escapeHtml(data.departureTime)}\n`;
+      summary += `<b>Arrival:</b> ${escapeHtml(data.arrivalTime)}\n`;
+      summary += `<b>Capacity:</b> ${escapeHtml(String(data.availableWeight))} kg\n`;
+      summary += `<b>Passport:</b> ${escapeHtml(data.passportNumber)}\n`;
+      if (data.notes) summary += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
+
+      await bot.sendMessage(chatId, summary, {
+        parse_mode: 'HTML',
+        ...confirmKeyboard('traveler', sess.requestId)
+      });
+      return;
+
+    default:
+      return;
+  }
+}
