@@ -71,19 +71,45 @@ try {
 }
 
 // ------------------- Webhook Auto-Recovery (important on Railway) -------------------
-async function autoFixWebhook() {
+// ====================================================
+// IMPROVED AUTO WEBHOOK RECOVERY (Railway + Render)
+// ====================================================
+async function autoRecoverWebhook() {
     try {
         const info = await bot.getWebHookInfo();
-        if (!info || info.url !== WEBHOOK_URL) {
-            console.log("♻️ Webhook mismatch — fixing...");
+
+        // If webhook has an error
+        if (info.last_error_date) {
+            console.log("⚠️ Webhook Error:", info.last_error_message);
+            console.log("🔧 Repairing webhook…");
+
             await bot.setWebHook(WEBHOOK_URL);
+            console.log("✅ Webhook repaired successfully.");
+            return;
         }
+
+        // If webhook URL is missing or incorrect
+        if (!info.url || info.url !== WEBHOOK_URL) {
+            console.log("⚠️ Webhook mismatch — fixing now...");
+            await bot.setWebHook(WEBHOOK_URL);
+            console.log("✅ Webhook URL corrected.");
+            return;
+        }
+
     } catch (err) {
-        console.error("Webhook auto-recovery error:", err);
+        console.log("❌ Auto-recovery failed:", err.message);
+        // Retry safety net
+        try {
+            await bot.setWebHook(WEBHOOK_URL);
+            console.log("♻️ Webhook restored after failure.");
+        } catch (e) {
+            console.log("🚨 Webhook full failure:", e.message);
+        }
     }
 }
-setInterval(autoFixWebhook, 15 * 60 * 1000);
 
+// Run every 30 seconds (best for Railway)
+setInterval(autoRecoverWebhook, 30 * 1000);
 // ------------------- Express Server -------------------
 const app = express();
 app.use(express.json({ limit: "20mb" }));
