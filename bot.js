@@ -58,16 +58,19 @@ try {
 }
 
 // ------------------- Telegram Bot (Webhook Mode) -------------------
+// TELEGRAM BOT (Webhook Mode)
 const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
-
 const WEBHOOK_PATH = `/bot${BOT_TOKEN}`;
-const WEBHOOK_URL = `${RAILWAY_URL}${WEBHOOK_PATH}`;
+const WEBHOOK_URL = `${BASE_URL}${WEBHOOK_PATH}`;
 
+// Delete old, then register new webhook
 try {
+    await bot.deleteWebHook();
+    console.log("🧹 Old webhook deleted");
     await bot.setWebHook(WEBHOOK_URL);
     console.log("🔗 Webhook set to:", WEBHOOK_URL);
 } catch (err) {
-    console.error("Webhook setup failed:", err.message);
+    console.error("Webhook setup error:", err);
 }
 
 // ------------------- Webhook Auto-Recovery (important on Railway) -------------------
