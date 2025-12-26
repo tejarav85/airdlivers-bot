@@ -148,9 +148,10 @@ async function findUserByUserId(userId) {
   return null;
 }
 
-function adminOnly(msg) {
+function isAdminMessage(msg) {
   return String(msg.chat.id) === String(ADMIN_GROUP_ID);
 }
+
 
 // --- airport + matching helpers ---
 function normalizeAirportName(str = '') {
@@ -701,6 +702,87 @@ async function tryForwardChatMessage(chatId, text) {
 }
 
 // ------------------- Commands -------------------
+bot.onText(/^\/(suspend|unsuspend|terminate)\s+(\d+)\s*(.*)?$/i, async (msg, match) => {
+  try {
+    if (!isAdminMessage(msg)) return;
+
+    const fromId = msg.from.id;
+    const isSuper = String(fromId) === String(SUPER_ADMIN_ID);
+    const isAdmin = adminAuth[fromId]?.loggedIn;
+
+    if (!isSuper && !isAdmin) {
+      return bot.sendMessage(msg.chat.id, '🔒 Admin access required.');
+    }
+
+    const command = match[1].toLowerCase();
+    const userId = Number(match[2]);
+    const reason = match[3] || 'Action taken by admin';
+
+    const found = await findUserByUserId(userId);
+    if (!found) {
+      return bot.sendMessage(msg.chat.id, '❌ User not found.');
+    }
+
+    const { col } = found;
+
+    // 🔴 SUSPEND
+    if (command === 'suspend') {
+      await col.updateOne(
+        { userId },
+        { $set: { suspended: true, suspendReason: reason, suspendedAt: new Date() } }
+      );
+
+      await bot.sendMessage(
+        userId,
+        `🚫 <b>Your account has been suspended.</b>\n\nReason:\n${escapeHtml(reason)}\n\nContact support.`,
+        { parse_mode: 'HTML' }
+      );
+
+      return bot.sendMessage(msg.chat.id, `✅ User ${userId} suspended.`);
+    }
+
+    // 🟢 UNSUSPEND
+    if (command === 'unsuspend') {
+      await col.updateOne(
+        { userId },
+        { $unset: { suspended: '', suspendReason: '', suspendedAt: '' } }
+      );
+
+      await bot.sendMessage(
+        userId,
+        `✅ <b>Your account has been restored.</b>\n\nYou may continue using AirDlivers.`,
+        { parse_mode: 'HTML', ...mainMenuInline }
+      );
+
+      return bot.sendMessage(msg.chat.id, `✅ User ${userId} unsuspended.`);
+    }
+
+    // 🛑 TERMINATE CHAT
+    if (command === 'terminate') {
+      await sendersCol.updateMany(
+        { userId },
+        { $set: { chatTerminated: true, terminationReason: reason }, $unset: { matchedWith: '', pendingMatchWith: '' } }
+      );
+
+      await travelersCol.updateMany(
+        { userId },
+        { $set: { chatTerminated: true, terminationReason: reason }, $unset: { matchedWith: '', pendingMatchWith: '' } }
+      );
+
+      await bot.sendMessage(
+        userId,
+        `🛑 <b>Your chat has been terminated.</b>\n\nReason:\n${escapeHtml(reason)}`,
+        { parse_mode: 'HTML', ...mainMenuInline }
+      );
+
+      return bot.sendMessage(msg.chat.id, `🛑 Chat terminated for user ${userId}.`);
+    }
+
+  } catch (err) {
+    console.error('Admin command error:', err);
+    bot.sendMessage(msg.chat.id, '❌ Admin command failed.');
+  }
+});
 bot.onText(/\/start/, async (msg) => {
   try {
     const chatId = msg.chat.id;
@@ -902,150 +984,26 @@ function showHelpMenu(chatId) {
 }
 
 // ------------------- Text message handler -------------------
-bot.onText(/^\/(suspend|unsuspend|terminate)\s+(.+)/i, async (msg, match) => {
-  try {
-    if (!adminOnly(msg)) return;
-
-    const fromId = msg.from.id;
-    const isSuper = String(fromId) === String(SUPER_ADMIN_ID);
-    const isAdmin = adminAuth[fromId]?.loggedIn;
-
-    if (!isSuper && !isAdmin) {
-      return bot.sendMessage(msg.chat.id, '🔒 Admin access required.');
-    }
-
-    const command = match[1];
-    const args = match[2].split(' ');
-    const userId = Number(args[0]);
-
-    if (!userId || isNaN(userId)) {
-      return bot.sendMessage(msg.chat.id, '❌ Invalid userId.');
-    }
-
-    const reason = args.slice(1).join(' ') || 'Action taken by admin';
-
-    const found = await findUserByUserId(userId);
-    if (!found) {
-      return bot.sendMessage(msg.chat.id, '❌ User not found in database.');
-    }
-
-    const { doc, col } = found;
-
-    // ---------------- SUSPEND ----------------
-    if (command === 'suspend') {
-      await col.updateOne(
-        { userId },
-        {
-          $set: {
-            suspended: true,
-            suspendReason: reason,
-            suspendedAt: new Date()
-          }
-        }
-      );
-
-      await bot.sendMessage(
-        userId,
-        `🚫 <b>Your account has been suspended.</b>\n\nReason:\n${escapeHtml(reason)}\n\nContact support if needed.`,
-        { parse_mode: 'HTML' }
-      );
-
-      return bot.sendMessage(
-        msg.chat.id,
-        `✅ User <code>${userId}</code> suspended.`,
-        { parse_mode: 'HTML' }
-      );
-    }
-
-    // ---------------- UNSUSPEND ----------------
-    if (command === 'unsuspend') {
-      await col.updateOne(
-        { userId },
-        {
-          $unset: {
-            suspended: '',
-            suspendReason: '',
-            suspendedAt: ''
-          }
-        }
-      );
-
-      await bot.sendMessage(
-        userId,
-        `✅ <b>Your account has been restored.</b>\n\nYou may continue using AirDlivers.`,
-        { parse_mode: 'HTML', ...mainMenuInline }
-      );
-
-      return bot.sendMessage(
-        msg.chat.id,
-        `✅ User <code>${userId}</code> unsuspended.`,
-        { parse_mode: 'HTML' }
-      );
-    }
-
-    // ---------------- TERMINATE CHAT ----------------
-    if (command === 'terminate') {
-      await sendersCol.updateMany(
-        { userId },
-        {
-          $set: {
-            matchLocked: false,
-            chatTerminated: true,
-            terminationReason: reason,
-            terminatedAt: new Date()
-          },
-          $unset: { matchedWith: '', pendingMatchWith: '' }
-        }
-      );
-
-      await travelersCol.updateMany(
-        { userId },
-        {
-          $set: {
-            matchLocked: false,
-            chatTerminated: true,
-            terminationReason: reason,
-            terminatedAt: new Date()
-          },
-          $unset: { matchedWith: '', pendingMatchWith: '' }
-        }
-      );
-
-      await bot.sendMessage(
-        userId,
-        `🛑 <b>Your chat has been terminated by admin.</b>\n\nReason:\n${escapeHtml(reason)}`,
-        { parse_mode: 'HTML', ...mainMenuInline }
-      );
-
-      return bot.sendMessage(
-        msg.chat.id,
-        `🛑 Chat terminated for user <code>${userId}</code>.`,
-        { parse_mode: 'HTML' }
-      );
-    }
-  } catch (err) {
-    console.error('Admin command error:', err);
-    await bot.sendMessage(msg.chat.id, '❌ Admin command failed. Check logs.');
-  }
-});
-const suspended =
-  (await sendersCol.findOne({ userId: msg.chat.id, suspended: true })) ||
-  (await travelersCol.findOne({ userId: msg.chat.id, suspended: true }));
-
-if (suspended && !msg.text?.startsWith('/start')) {
-  return bot.sendMessage(
-    msg.chat.id,
-    `🚫 <b>Your account is suspended.</b>\n\nReason:\n${escapeHtml(
-      suspended.suspendReason || 'Contact support'
-    )}`,
-    { parse_mode: 'HTML' }
-  );
-}
 bot.on('message', async (msg) => {
   try {
     const chatId = msg.chat.id;
     const fromId = msg.from.id;
     const text = (msg.text || '').trim();
+        // 🚫 Suspended user guard
+    const suspended =
+      (await sendersCol.findOne({ userId: chatId, suspended: true })) ||
+      (await travelersCol.findOne({ userId: chatId, suspended: true }));
+
+    if (suspended && !text.startsWith('/start')) {
+      await bot.sendMessage(
+        chatId,
+        `🚫 <b>Your account is suspended.</b>\n\nReason:\n${escapeHtml(
+          suspended.suspendReason || 'Contact support'
+        )}`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
 
     // /admin flow
     if (text === '/admin') {
@@ -1767,5 +1725,3 @@ process.on('SIGINT', async () => {
 
 // ------------------- startup log -------------------
 console.log('✅ AirDlivers bot (webhook + auto-recovery) is running...');
-
-
