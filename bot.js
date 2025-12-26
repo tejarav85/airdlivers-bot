@@ -170,6 +170,13 @@ function areDatesClose(senderSendDateStr, travelerDepartureStr) {
   const diffDays = Math.abs(t.startOf('day').diff(s.startOf('day'), 'days'));
   return diffDays <= 1;
 }
+// ------------------- Suspension Helper -------------------
+async function isUserSuspended(userId) {
+  const s = await sendersCol.findOne({ userId, suspended: true });
+  if (s) return s;
+  const t = await travelersCol.findOne({ userId, suspended: true });
+  return t || null;
+}
 
 // ------------------- JSON backup helpers -------------------
 async function backupSenderToJSON(doc) {
@@ -242,6 +249,8 @@ function adminActionKeyboardForDoc(doc) {
             { text: '✅ Approve', callback_data: `approve_${rid}` },
             { text: '❌ Reject', callback_data: `reject_${rid}` }
           ]
+          [{ text: '🚫 Suspend User', callback_data: `adm_suspend_${rid}` }],
+[{ text: '🛑 Terminate Chat', callback_data: `adm_terminate_${rid}` }]
         ]
       }
     };
@@ -727,6 +736,15 @@ bot.on('callback_query', async (query) => {
   try {
     const data = query.data;
     const chatId = query.message.chat.id;
+        // 🚫 Suspension guard (callbacks)
+    const suspended = await isUserSuspended(chatId);
+    if (suspended) {
+      await bot.answerCallbackQuery(query.id, {
+        text: 'Your account is suspended. Contact support.',
+        show_alert: true
+      });
+      return;
+    }
 
     // matching callbacks
     if (data && data.startsWith('m_')) {
@@ -796,13 +814,16 @@ bot.on('callback_query', async (query) => {
     }
 
     // Admin actions
-    if (
-      data &&
-      (data.startsWith('approve_') ||
-        data.startsWith('reject_') ||
-        data.startsWith('reason_') ||
-        data.startsWith('requestvisa_'))
-    ) {
+   if (
+  data &&
+  (data.startsWith('approve_') ||
+   data.startsWith('reject_') ||
+   data.startsWith('reason_') ||
+   data.startsWith('requestvisa_') ||
+   data.startsWith('adm_suspend_') ||
+   data.startsWith('adm_unsuspend_') ||
+   data.startsWith('adm_terminate_'))
+) {
       const invokedBy = query.from.id;
       const userIsSuper = String(invokedBy) === String(SUPER_ADMIN_ID);
       const userIsLogged = Boolean(adminAuth[invokedBy]?.loggedIn);
@@ -847,6 +868,82 @@ bot.on('callback_query', async (query) => {
         await processRequestVisa(reqId, invokedBy, query);
         return;
       }
+     if (data.startsWith('adm_suspend_')) {
+  const reqId = data.replace('adm_suspend_', '');
+
+  const doc =
+    await sendersCol.findOne({ requestId: reqId }) ||
+    await travelersCol.findOne({ requestId: reqId });
+
+  if (!doc) return;
+
+  const col = doc.role === 'sender' ? sendersCol : travelersCol;
+
+  await col.updateOne(
+    { requestId: reqId },
+    {
+      $set: {
+        suspended: true,
+        suspendReason: 'Suspicious activity detected',
+        suspendedAt: new Date()
+      }
+    }
+  );
+
+  await bot.sendMessage(
+    doc.userId,
+    `🚫 <b>Your account has been suspended.</b>\n\nContact support: support@airdlivers.com`,
+    { parse_mode: 'HTML' }
+  );
+
+  await bot.sendMessage(
+    ADMIN_GROUP_ID,
+    `🚫 User suspended\nRequest ID: <code>${escapeHtml(reqId)}</code>`,
+    { parse_mode: 'HTML' }
+  );
+}
+  if (data.startsWith('adm_terminate_')) {
+  const reqId = data.replace('adm_terminate_', '');
+
+  const doc =
+    await sendersCol.findOne({ requestId: reqId, matchLocked: true }) ||
+    await travelersCol.findOne({ requestId: reqId, matchLocked: true });
+
+  if (!doc || !doc.matchedWith) return;
+
+  const otherCol = doc.role === 'sender' ? travelersCol : sendersCol;
+  const otherDoc = await otherCol.findOne({ requestId: doc.matchedWith });
+
+  for (const col of [sendersCol, travelersCol]) {
+    await col.updateMany(
+      { requestId: { $in: [reqId, doc.matchedWith] } },
+      {
+        $set: {
+          matchLocked: false,
+          chatTerminated: true,
+          terminatedAt: new Date(),
+          terminationReason: 'Admin terminated the chat'
+        },
+        $unset: { matchedWith: '', pendingMatchWith: '' }
+      }
+    );
+  }
+
+  for (const u of [doc, otherDoc]) {
+    if (!u) continue;
+    await bot.sendMessage(
+      u.userId,
+      `🛑 <b>Your chat has been terminated by admin.</b>\n\nYou may restart using /start`,
+      { parse_mode: 'HTML', ...mainMenuInline }
+    );
+  }
+
+  await bot.sendMessage(
+    ADMIN_GROUP_ID,
+    `🛑 Chat terminated\nRequest ID: <code>${escapeHtml(reqId)}</code>`,
+    { parse_mode: 'HTML' }
+  );
+}   
     }
 
     await bot.answerCallbackQuery(query.id, { text: 'Action received.' });
@@ -894,7 +991,18 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const fromId = msg.from.id;
     const text = (msg.text || '').trim();
-
+    // 🚫 Suspension guard
+    const suspended = await isUserSuspended(chatId);
+    if (suspended && !text.startsWith('/help') && !text.startsWith('/privacy')) {
+      await bot.sendMessage(
+        chatId,
+        `🚫 <b>Your account is suspended.</b>\n\nReason: ${escapeHtml(
+          suspended.suspendReason || 'Contact support'
+        )}\n\n📧 support@airdlivers.com`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
     // /admin flow
     if (text === '/admin') {
       if (String(fromId) === String(SUPER_ADMIN_ID)) {
@@ -1615,3 +1723,5 @@ process.on('SIGINT', async () => {
 
 // ------------------- startup log -------------------
 console.log('✅ AirDlivers bot (webhook + auto-recovery) is running...');
+
+
