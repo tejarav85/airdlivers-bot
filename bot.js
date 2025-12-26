@@ -241,20 +241,28 @@ function confirmKeyboard(role, requestId) {
 
 function adminActionKeyboardForDoc(doc) {
   const rid = doc.requestId;
-  if (doc.role === 'sender') {
-    return {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '✅ Approve', callback_data: `approve_${rid}` },
-            { text: '❌ Reject', callback_data: `reject_${rid}` }
-          ]
-          [{ text: '🚫 Suspend User', callback_data: `adm_suspend_${rid}` }],
-[{ text: '🛑 Terminate Chat', callback_data: `adm_terminate_${rid}` }]
-        ]
-      }
-    };
-  } else {
+
+if (doc.role === 'sender') {
+  const rows = [
+    [
+      { text: '✅ Approve', callback_data: `approve_${rid}` },
+      { text: '❌ Reject', callback_data: `reject_${rid}` }
+    ],
+    [
+      { text: '🚫 Suspend User', callback_data: `adm_suspend_${rid}` }
+    ]
+  ];
+
+  if (doc.matchLocked) {
+    rows.push([
+      { text: '🛑 Terminate Chat', callback_data: `adm_terminate_${rid}` }
+    ]);
+  }
+
+  return { reply_markup: { inline_keyboard: rows } };
+}
+
+  // traveler logic remains unchanged else {
     if (doc.status === 'VisaRequested') {
       return {
         reply_markup: {
@@ -877,7 +885,8 @@ bot.on('callback_query', async (query) => {
 
   if (!doc) return;
 
-  const col = doc.role === 'sender' ? sendersCol : travelersCol;
+  const isSender = await sendersCol.findOne({ requestId: reqId });
+const col = isSender ? sendersCol : travelersCol;
 
   await col.updateOne(
     { requestId: reqId },
