@@ -228,7 +228,13 @@ bot.onText(/\/id/, msg => {
 
 // help command
 bot.onText(/\/help|\/privacy/, msg => showHelpMenu(msg.chat.id));
-
+// 🚨 Guard: expecting photo but user sent text
+if (session?.expectingPhoto && msg.text) {
+  return bot.sendMessage(
+    chatId,
+    '📸 Please upload a PHOTO to continue. Text is not accepted for this step.'
+  );
+}
 // ==============================================
 // ============ START SENDER FLOW ===============
 // ==============================================
@@ -340,7 +346,12 @@ bot.on("photo", async msg => {
   } catch (e) {
     console.error("photo handler error:", e);
   }
-});
+}
+      console.log('PHOTO RECEIVED', {
+  chatId,
+  expecting: session?.expectingPhoto,
+  step: session?.step
+}););
 
 // ==============================================
 // ============ TEXT FLOW — SENDER ==============
