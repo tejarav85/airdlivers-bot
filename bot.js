@@ -1047,13 +1047,18 @@ bot.on('message', async (msg) => {
       (await travelersCol.findOne({ userId: chatId, suspended: true }));
 
     if (suspended && !text.startsWith('/start')) {
-      await bot.sendMessage(
-        chatId,
-        `🚫 <b>Your account is suspended.</b>\n\nReason:\n${escapeHtml(
-          suspended.suspendReason || 'Contact support'
-        )}`,
-        { parse_mode: 'HTML' }
-      );
+     await bot.sendMessage(
+  chatId,
+  `🚫 <b>Your account is suspended.</b>\n\n` +
+  `<b>Reason:</b>\n${escapeHtml(
+    suspended.suspendReason || 'Contact support'
+  )}` +
+  SUPPORT_TEXT,
+  {
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  }
+);
       return;
     }
 
