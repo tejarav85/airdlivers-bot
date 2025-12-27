@@ -816,6 +816,58 @@ bot.onText(/\/privacy|\/help/, (msg) => {
     `Privacy: We collect data required to facilitate deliveries (name, contact, IDs when needed). We do not sell data.`;
   bot.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
 });
+// ------------------- Admin: WHOIS command -------------------
+bot.onText(/^\/whois\s+(snd\d+|trv\d+)$/i, async (msg, match) => {
+  try {
+    const chatId = msg.chat.id;
+    const fromId = msg.from.id;
+
+    // Only admin group allowed
+    if (String(chatId) !== String(ADMIN_GROUP_ID)) return;
+
+    const isSuper = String(fromId) === String(SUPER_ADMIN_ID);
+    const isAdmin = adminAuth[fromId]?.loggedIn;
+
+    if (!isSuper && !isAdmin) {
+      return bot.sendMessage(chatId, '🔒 Admin access required.');
+    }
+
+    const requestId = match[1];
+    let doc = await sendersCol.findOne({ requestId });
+    let role = 'Sender';
+
+    if (!doc) {
+      doc = await travelersCol.findOne({ requestId });
+      role = 'Traveler';
+    }
+
+    if (!doc) {
+      return bot.sendMessage(chatId, `❌ Request ID not found: ${requestId}`);
+    }
+
+    const suspended = doc.suspended ? 'YES 🚫' : 'NO ✅';
+
+    const text =
+      `<b>👤 USER INFO</b>\n\n` +
+      `<b>Role:</b> ${role}\n` +
+      `<b>Request ID:</b> <code>${escapeHtml(doc.requestId)}</code>\n` +
+      `<b>Telegram User ID:</b> <code>${escapeHtml(String(doc.userId))}</code>\n\n` +
+      `<b>Name:</b> ${escapeHtml(doc.data?.name || 'N/A')}\n` +
+      `<b>Phone:</b> ${escapeHtml(doc.data?.phone || 'N/A')}\n` +
+      `<b>Status:</b> ${escapeHtml(doc.status || 'N/A')}\n` +
+      `<b>Suspended:</b> ${suspended}\n\n` +
+      `🛠 You may now use:\n` +
+      `<code>/suspend ${doc.userId} reason</code>\n` +
+      `<code>/unsuspend ${doc.userId}</code>\n` +
+      `<code>/terminate ${doc.userId} reason</code>`;
+
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+
+  } catch (err) {
+    console.error('/whois error', err);
+    bot.sendMessage(msg.chat.id, '❌ WHOIS command failed.');
+  }
+});
 
 // ------------------- Callback handler -------------------
 bot.on('callback_query', async (query) => {
