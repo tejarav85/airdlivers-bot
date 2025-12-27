@@ -748,11 +748,11 @@ bot.onText(/^\/(suspend|unsuspend|terminate)\s+(\d+)\s*(.*)?$/i, async (msg, mat
         { $unset: { suspended: '', suspendReason: '', suspendedAt: '' } }
       );
 
-      await bot.sendMessage(
-        userId,
-        `✅ <b>Your account has been restored.</b>\n\nYou may continue using AirDlivers.`,
-        { parse_mode: 'HTML', ...mainMenuInline }
-      );
+    await bot.sendMessage(
+  userId,
+  `✅ <b>Your account has been restored.</b>\n\nYou may continue your previous conversation.`,
+  { parse_mode: 'HTML' }
+);
 
       return bot.sendMessage(msg.chat.id, `✅ User ${userId} unsuspended.`);
     }
