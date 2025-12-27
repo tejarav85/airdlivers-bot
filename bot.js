@@ -27,6 +27,10 @@ if (!BOT_TOKEN) { console.error('FATAL: BOT_TOKEN missing'); process.exit(1); }
 if (!ADMIN_GROUP_ID) { console.error('FATAL: ADMIN_GROUP_ID missing'); process.exit(1); }
 if (!ADMIN_PIN) { console.error('FATAL: ADMIN_PIN missing'); process.exit(1); }
 if (!MONGO_URI) { console.error('FATAL: MONGO_URI missing'); process.exit(1); }
+const SUPPORT_TEXT =
+  `\n\n📞 <b>Contact Support</b>\n` +
+  `🔗 <a href="https://t.me/+CAntejDg9plmNWI0">AirDlivers Support Group</a>\n` +
+  `📧 Email: <b>Hrmailsinfo@gmail.com</b>`;
 
 // ------------------- JSON backup files -------------------
 const SENDERS_JSON = join(__dirname, 'senders.json');
@@ -732,11 +736,16 @@ bot.onText(/^\/(suspend|unsuspend|terminate)\s+(\d+)\s*(.*)?$/i, async (msg, mat
         { $set: { suspended: true, suspendReason: reason, suspendedAt: new Date() } }
       );
 
-      await bot.sendMessage(
-        userId,
-        `🚫 <b>Your account has been suspended.</b>\n\nReason:\n${escapeHtml(reason)}\n\nContact support.`,
-        { parse_mode: 'HTML' }
-      );
+    await bot.sendMessage(
+  userId,
+  `🚫 <b>Your account has been suspended.</b>\n\n` +
+  `<b>Reason:</b>\n${escapeHtml(reason)}` +
+  SUPPORT_TEXT,
+  {
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  }
+);
 
       return bot.sendMessage(msg.chat.id, `✅ User ${userId} suspended.`);
     }
