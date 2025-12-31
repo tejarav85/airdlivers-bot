@@ -67,26 +67,14 @@ try {
 }
 
 // Auto-recovery: periodically verify & fix webhook
-async function ensureWebhook() {
-  try {
-    const info = await bot.getWebHookInfo();
-    if (!info) {
-      console.log('⚠️ getWebHookInfo returned empty, resetting webhook...');
-      await bot.setWebHook(WEBHOOK_URL);
-      return;
-    }
-    if (info.url !== WEBHOOK_URL) {
-      console.log(`🔁 Webhook URL mismatch.\nCurrent: ${info.url}\nExpected: ${WEBHOOK_URL}\nResetting...`);
-      await bot.setWebHook(WEBHOOK_URL);
-    }
-  } catch (err) {
-    console.error('ensureWebhook error:', err.message || err);
-  }
+try {
+  await bot.setWebHook(WEBHOOK_URL, {
+    drop_pending_updates: true
+  });
+  console.log('✅ Webhook set successfully:', WEBHOOK_URL);
+} catch (err) {
+  console.error('❌ Failed to set webhook:', err.message);
 }
-
-// run once at startup and then every 15 minutes
-ensureWebhook();
-setInterval(ensureWebhook, 15 * 60 * 1000);
 
 // ------------------- EXPRESS SERVER & WEBHOOK -------------------
 const app = express();
