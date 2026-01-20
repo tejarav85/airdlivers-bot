@@ -1375,6 +1375,7 @@ bot.on('photo', async (msg) => {
                     session.data.itineraryPhoto = fileId;
                     session.expectingPhoto = null;
                     session.step = 'optional_notes';
+                    session.waitingForNotes = true;
                     await bot.sendMessage(chatId, "📝 Add optional notes or type 'None':", { parse_mode: 'HTML' });
                     return;
                 }
@@ -1495,8 +1496,14 @@ async function handleSenderTextStep(chatId, text) {
         }
 
         case 'send_date': {
-            const d = parseDate_ddmmyyyy(text);
-            if (!d) return bot.sendMessage(chatId, '❌ Invalid Send Date format. Use DD-MM-YYYY.');
+            if (!text || text.length < 5) {
+  return bot.sendMessage(chatId, '📅 Please enter Send Date in DD-MM-YYYY format.');
+}
+
+const d = parseDate_ddmmyyyy(text);
+if (!d) {
+  return bot.sendMessage(chatId, '❌ Invalid Send Date format. Use DD-MM-YYYY.');
+}
             if (d < todayStart()) return bot.sendMessage(chatId, 'Send Date cannot be in the past.');
             data.sendDate = moment(d).format('DD-MM-YYYY');
             sess.step = 'arrival_date';
@@ -1523,31 +1530,32 @@ async function handleSenderTextStep(chatId, text) {
 
 case 'optional_notes':
 
+  if (!text || text.length < 1) {
+    return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
+  }
+
   data.notes = (text.toLowerCase() === 'none') ? '' : text;
   sess.requestId = makeRequestId('snd');
   sess.step = 'confirm_pending';
-            {
-                let html = `<b>🧾 Sender Summary</b>\n\n`;
-                html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
-                html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
-                html += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
-                html += `<b>Email:</b> ${escapeHtml(data.email)}\n`;
-                html += `<b>Pickup:</b> ${escapeHtml(data.pickup)}\n`;
-                html += `<b>Destination:</b> ${escapeHtml(data.destination)}\n`;
-                html += `<b>Weight:</b> ${escapeHtml(String(data.weight))} kg\n`;
-                html += `<b>Category:</b> ${escapeHtml(data.category)}\n`;
-                html += `<b>Send:</b> ${escapeHtml(data.sendDate)}\n`;
-                html += `<b>Arrival:</b> ${escapeHtml(data.arrivalDate)}\n`;
-                if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
-                await bot.sendMessage(chatId, html, {
-                    parse_mode: 'HTML',
-                    ...confirmKeyboard('sender', sess.requestId)
-                });
-                return;
-            }
 
-        default:
-            return;
+  let html = `<b>🧾 Sender Summary</b>\n\n`;
+  html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
+  html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
+  html += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
+  html += `<b>Email:</b> ${escapeHtml(data.email)}\n`;
+  html += `<b>Pickup:</b> ${escapeHtml(data.pickup)}\n`;
+  html += `<b>Destination:</b> ${escapeHtml(data.destination)}\n`;
+  html += `<b>Weight:</b> ${escapeHtml(String(data.weight))} kg\n`;
+  html += `<b>Category:</b> ${escapeHtml(data.category)}\n`;
+  html += `<b>Send:</b> ${escapeHtml(data.sendDate)}\n`;
+  html += `<b>Arrival:</b> ${escapeHtml(data.arrivalDate)}\n`;
+  if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
+
+  await bot.sendMessage(chatId, html, {
+    parse_mode: 'HTML',
+    ...confirmKeyboard('sender', sess.requestId)
+  });
+  return;
     }
 }
 
@@ -1642,29 +1650,33 @@ async function handleTravelerTextStep(chatId, text) {
             return bot.sendMessage(chatId, '📸 Upload a selfie holding your passport (mandatory):', { parse_mode: 'HTML' });
 
 case 'optional_notes':
-  if (sess.waitingForNotes !== true) return;
+
+  if (!text || text.length < 1) {
+    return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
+  }
 
   sess.waitingForNotes = false;
   data.notes = (text.toLowerCase() === 'none') ? '' : text;
   sess.requestId = makeRequestId('trv');
   sess.step = 'confirm_pending';
-            {
-                let html = `<b>🧾 Traveler Summary</b>\n\n`;
-                html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
-                html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
-                html += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
-                html += `<b>From:</b> ${escapeHtml(data.departure)} (${escapeHtml(data.departureCountry)})\n`;
-                html += `<b>To:</b> ${escapeHtml(data.destination)} (${escapeHtml(data.arrivalCountry)})\n`;
-                html += `<b>Departure:</b> ${escapeHtml(data.departureTime)}\n`;
-                html += `<b>Arrival:</b> ${escapeHtml(data.arrivalTime)}\n`;
-                html += `<b>Available Weight:</b> ${escapeHtml(String(data.availableWeight))} kg\n`;
-                html += `<b>Passport:</b> ${escapeHtml(data.passportNumber)}\n`;
-                if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
-                await bot.sendMessage(chatId, html, {
-                    parse_mode: 'HTML',
-                    ...confirmKeyboard('traveler', sess.requestId)
-                });
-                return;
+
+  let html = `<b>🧾 Traveler Summary</b>\n\n`;
+  html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
+  html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
+  html += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
+  html += `<b>From:</b> ${escapeHtml(data.departure)} (${escapeHtml(data.departureCountry)})\n`;
+  html += `<b>To:</b> ${escapeHtml(data.destination)} (${escapeHtml(data.arrivalCountry)})\n`;
+  html += `<b>Departure:</b> ${escapeHtml(data.departureTime)}\n`;
+  html += `<b>Arrival:</b> ${escapeHtml(data.arrivalTime)}\n`;
+  html += `<b>Available Weight:</b> ${escapeHtml(String(data.availableWeight))} kg\n`;
+  html += `<b>Passport:</b> ${escapeHtml(data.passportNumber)}\n`;
+  if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
+
+  await bot.sendMessage(chatId, html, {
+    parse_mode: 'HTML',
+    ...confirmKeyboard('traveler', sess.requestId)
+  });
+  return;
             }
 
         default:
