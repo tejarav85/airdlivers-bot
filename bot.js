@@ -1649,13 +1649,12 @@ async function handleTravelerTextStep(chatId, text) {
             sess.step = 'passport_selfie';
             return bot.sendMessage(chatId, '📸 Upload a selfie holding your passport (mandatory):', { parse_mode: 'HTML' });
 
-case 'optional_notes':
+case 'optional_notes': {
 
   if (!text || text.length < 1) {
     return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
   }
 
-  sess.waitingForNotes = false;
   data.notes = (text.toLowerCase() === 'none') ? '' : text;
   sess.requestId = makeRequestId('trv');
   sess.step = 'confirm_pending';
@@ -1677,10 +1676,10 @@ case 'optional_notes':
     ...confirmKeyboard('traveler', sess.requestId)
   });
   return;
-            }
+}
 
-        default:
-            return;
+default:
+  return;
     }
 }
 
