@@ -1522,9 +1522,7 @@ async function handleSenderTextStep(chatId, text) {
         }
 
 case 'optional_notes':
-  if (sess.waitingForNotes !== true) return;
 
-  sess.waitingForNotes = false;
   data.notes = (text.toLowerCase() === 'none') ? '' : text;
   sess.requestId = makeRequestId('snd');
   sess.step = 'confirm_pending';
