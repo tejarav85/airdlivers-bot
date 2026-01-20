@@ -796,44 +796,70 @@ bot.onText(/^\/(suspend|unsuspend|terminate)\s+(\d+)\s*(.*)?$/i, async (msg, mat
         bot.sendMessage(msg.chat.id, '❌ Admin command failed.');
     }
 });
-// Delivered
+//-------------------- Delivered--------------------///
 bot.onText(/^\/delivered$/i, async (msg) => {
-    try {
-        const chatId = msg.chat.id;
+  try {
+    const chatId = msg.chat.id;
 
-        const myDoc = await findActiveMatchForUser(chatId);
-        if (!myDoc) {
-            return bot.sendMessage(chatId, '❌ You do not have an active delivery.');
-        }
+    const myDoc = await findActiveMatchForUser(chatId);
 
-        const col = myDoc.role === 'sender' ? sendersCol : travelersCol;
-
-        await col.updateOne(
-            { requestId: myDoc.requestId },
-            { $set: { deliveryCompleted: true, deliveryCompletedAt: new Date() } }
-        );
-
-        const otherCol = myDoc.role === 'sender' ? travelersCol : sendersCol;
-        const otherDoc = await otherCol.findOne({ requestId: myDoc.matchedWith });
-
-        if (otherDoc) {
-            await bot.sendMessage(
-                otherDoc.userId,
-                '📦 <b>The delivery has been marked as completed.</b>\n\nThank you for using AirDlivers!',
-                { parse_mode: 'HTML', ...mainMenuInline }
-            );
-        }
-
-        await bot.sendMessage(
-            chatId,
-            '✅ <b>Delivery marked as completed.</b>\n\nThank you for using AirDlivers!',
-            { parse_mode: 'HTML', ...mainMenuInline }
-        );
-
-    } catch (err) {
-        console.error('/delivered error', err);
-        bot.sendMessage(msg.chat.id, '❌ Error marking delivery as completed.');
+    // ❌ No active match
+    if (!myDoc) {
+      return bot.sendMessage(chatId, 
+        '❌ You don’t have any current shipment in process.',
+        { parse_mode: 'HTML' }
+      );
     }
+
+    // ❌ Already completed
+    if (myDoc.deliveryCompleted) {
+      return bot.sendMessage(chatId,
+        '✅ This delivery is already marked as completed.\nYou don’t have any current shipment in process.',
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    // ✅ Mark completed
+    const col = myDoc.role === 'sender' ? sendersCol : travelersCol;
+
+    await col.updateOne(
+      { requestId: myDoc.requestId },
+      { $set: { deliveryCompleted: true, deliveryCompletedAt: new Date() } }
+    );
+
+    const otherCol = myDoc.role === 'sender' ? travelersCol : sendersCol;
+    const otherDoc = await otherCol.findOne({ requestId: myDoc.matchedWith });
+
+    if (otherDoc) {
+      await otherCol.updateOne(
+        { requestId: otherDoc.requestId },
+        { $set: { deliveryCompleted: true, deliveryCompletedAt: new Date() } }
+      );
+    }
+
+    // Notify users
+    await bot.sendMessage(chatId,
+      '📦 <b>Delivery marked as completed.</b>\nThank you for using AirDlivers!',
+      { parse_mode: 'HTML', ...mainMenuInline }
+    );
+
+    if (otherDoc) {
+      await bot.sendMessage(otherDoc.userId,
+        '📦 <b>Delivery marked as completed.</b>\nThank you for using AirDlivers!',
+        { parse_mode: 'HTML', ...mainMenuInline }
+      );
+    }
+
+    // 🔔 Notify admin
+    await bot.sendMessage(String(ADMIN_GROUP_ID),
+      `📦 <b>Delivery Completed</b>\nSender/Traveler ID: <code>${myDoc.requestId}</code>`,
+      { parse_mode: 'HTML' }
+    );
+
+  } catch (err) {
+    console.error('/delivered error', err);
+    bot.sendMessage(msg.chat.id, '❌ Error marking delivery as completed.');
+  }
 });
 bot.onText(/\/start/, async (msg) => {
     try {
