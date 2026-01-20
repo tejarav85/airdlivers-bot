@@ -1349,7 +1349,8 @@ bot.on('photo', async (msg) => {
                     session.data.selfieId = fileId;
                     session.expectingPhoto = null;
                     session.step = 'optional_notes';
-                    await bot.sendMessage(chatId, "📝 Add optional notes or type 'None':", { parse_mode: 'HTML' });
+session.waitingForNotes = true;
+await bot.sendMessage(chatId, "📝 Add optional notes or type 'None':", { parse_mode: 'HTML' });
                     return;
                 }
             }
@@ -1528,10 +1529,15 @@ async function handleSenderTextStep(chatId, text) {
 
 case 'optional_notes':
 
+  if (sess.waitingForNotes) {
+    sess.waitingForNotes = false;
+    return; // wait for user reply
+  }
+
   if (!text || text.length < 1) {
     return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
   }
-
+ 
   data.notes = (text.toLowerCase() === 'none') ? '' : text;
   sess.requestId = makeRequestId('snd');
   sess.step = 'confirm_pending';
@@ -1649,8 +1655,9 @@ async function handleTravelerTextStep(chatId, text) {
 
 case 'optional_notes': {
 
-  if (!text || text.length < 1) {
-    return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
+  if (sess.waitingForNotes) {
+    sess.waitingForNotes = false;
+    return; // wait for user reply
   }
 
   data.notes = (text.toLowerCase() === 'none') ? '' : text;
