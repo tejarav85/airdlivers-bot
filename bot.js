@@ -1234,6 +1234,18 @@ AirDlivers is not liable for loss, delays, customs issues, or disputes.
 
 // ------------------- Text message handler -------------------
 bot.on('message', async (msg) => {
+const chatId = msg.chat.id;
+const text = (msg.text || '').trim();
+const session = userSessions[chatId];
+
+// ⛔ Block auto-advance for optional notes
+if (session?.step === 'optional_notes' && !text) {
+  return bot.sendMessage(
+    chatId,
+    "📝 Please type your notes or 'None' to continue.",
+    { parse_mode: 'HTML' }
+  );
+}
     try {
         const chatId = msg.chat.id;
         const fromId = msg.from.id;
