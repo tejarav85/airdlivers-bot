@@ -1691,7 +1691,7 @@ case 'optional_notes': {
   return;
 }
 }
-    }
+
 }
 
 // ------------------- Final Sender submit -------------------
