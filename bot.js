@@ -1655,12 +1655,19 @@ async function handleTravelerTextStep(chatId, text) {
 
 case 'optional_notes': {
 
+  // First time entering this step → just wait for user input
   if (sess.waitingForNotes) {
     sess.waitingForNotes = false;
-    return; // wait for user reply
+    return;
+  }
+
+  // Now validate the actual user reply
+  if (!text || text.length < 1) {
+    return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
   }
 
   data.notes = (text.toLowerCase() === 'none') ? '' : text;
+
   sess.requestId = makeRequestId('trv');
   sess.step = 'confirm_pending';
 
@@ -1680,7 +1687,9 @@ case 'optional_notes': {
     parse_mode: 'HTML',
     ...confirmKeyboard('traveler', sess.requestId)
   });
+
   return;
+}
 }
 
 default:
