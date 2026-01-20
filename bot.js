@@ -814,7 +814,7 @@ bot.onText(/^\/delivered$/i, async (msg) => {
     // ❌ Already completed
     if (myDoc.deliveryCompleted) {
       return bot.sendMessage(chatId,
-        '✅ This delivery is already marked as completed.\nYou don’t have any current shipment in process.',
+        'You don’t have any current shipment in process.',
         { parse_mode: 'HTML' }
       );
     }
