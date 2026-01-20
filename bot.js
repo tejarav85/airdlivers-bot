@@ -1240,15 +1240,6 @@ bot.on('message', async (msg) => {
     const text = (msg.text || '').trim();
     const session = userSessions[chatId];
 
-    // ⛔ Prevent skipping optional notes
-    if (session?.step === 'optional_notes' && (!text || text.length < 1)) {
-      return bot.sendMessage(
-        chatId,
-        "📝 Please type your notes or 'None' to continue.",
-        { parse_mode: 'HTML' }
-      );
-    }
-
     // 🚫 Suspended user check
     const suspended =
       (await sendersCol.findOne({ userId: chatId, suspended: true })) ||
@@ -1495,20 +1486,27 @@ async function handleSenderTextStep(chatId, text) {
             return bot.sendMessage(chatId, '📦 Choose package category (inline):', categoryKeyboard);
         }
 
-        case 'send_date': {
-            if (!text || text.length < 5) {
-  return bot.sendMessage(chatId, '📅 Please enter Send Date in DD-MM-YYYY format.');
-}
+       case 'send_date': {
 
-const d = parseDate_ddmmyyyy(text);
-if (!d) {
-  return bot.sendMessage(chatId, '❌ Invalid Send Date format. Use DD-MM-YYYY.');
+  if (!text || text.trim().length === 0) {
+    return; // do nothing, wait for user input
+  }
+
+  const d = parseDate_ddmmyyyy(text);
+
+  if (!d) {
+    return bot.sendMessage(chatId, '📅 Please enter Send Date in DD-MM-YYYY format.');
+  }
+
+  if (d < todayStart()) {
+    return bot.sendMessage(chatId, 'Send Date cannot be in the past.');
+  }
+
+  data.sendDate = moment(d).format('DD-MM-YYYY');
+  sess.step = 'arrival_date';
+
+  return bot.sendMessage(chatId, '📅 Enter Arrival Date (DD-MM-YYYY):', { parse_mode: 'HTML' });
 }
-            if (d < todayStart()) return bot.sendMessage(chatId, 'Send Date cannot be in the past.');
-            data.sendDate = moment(d).format('DD-MM-YYYY');
-            sess.step = 'arrival_date';
-            return bot.sendMessage(chatId, '📅 Enter Arrival Date (DD-MM-YYYY):', { parse_mode: 'HTML' });
-        }
 
         case 'arrival_date': {
             const d = parseDate_ddmmyyyy(text);
