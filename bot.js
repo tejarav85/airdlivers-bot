@@ -1234,18 +1234,20 @@ AirDlivers is not liable for loss, delays, customs issues, or disputes.
 
 // ------------------- Text message handler -------------------
 bot.on('message', async (msg) => {
-const chatId = msg.chat.id;
-const text = (msg.text || '').trim();
-const session = userSessions[chatId];
+  try {
+    const chatId = msg.chat.id;
+    const fromId = msg.from.id;
+    const text = (msg.text || '').trim();
+    const session = userSessions[chatId];
 
-// ⛔ Block auto-advance for optional notes
-if (session?.step === 'optional_notes' && !text) {
-  return bot.sendMessage(
-    chatId,
-    "📝 Please type your notes or 'None' to continue.",
-    { parse_mode: 'HTML' }
-  );
-}
+    // ⛔ HARD BLOCK: Prevent auto-skip of optional notes
+    if (session?.step === 'optional_notes' && (!text || text.length < 1)) {
+      return bot.sendMessage(
+        chatId,
+        "📝 Please type your notes or 'None' to continue.",
+        { parse_mode: 'HTML' }
+      );
+    }
     try {
         const chatId = msg.chat.id;
         const fromId = msg.from.id;
@@ -1539,10 +1541,13 @@ async function handleSenderTextStep(chatId, text) {
             );
         }
 
-        case 'optional_notes':
-            data.notes = (text.toLowerCase() === 'none') ? '' : text;
-            sess.requestId = makeRequestId('snd');
-            sess.step = 'confirm_pending';
+case 'optional_notes':
+  if (sess.waitingForNotes !== true) return;
+
+  sess.waitingForNotes = false;
+  data.notes = (text.toLowerCase() === 'none') ? '' : text;
+  sess.requestId = makeRequestId('snd');
+  sess.step = 'confirm_pending';
             {
                 let html = `<b>🧾 Sender Summary</b>\n\n`;
                 html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
@@ -1658,10 +1663,13 @@ async function handleTravelerTextStep(chatId, text) {
             sess.step = 'passport_selfie';
             return bot.sendMessage(chatId, '📸 Upload a selfie holding your passport (mandatory):', { parse_mode: 'HTML' });
 
-        case 'optional_notes':
-            data.notes = (text.toLowerCase() === 'none') ? '' : text;
-            sess.requestId = makeRequestId('trv');
-            sess.step = 'confirm_pending';
+case 'optional_notes':
+  if (sess.waitingForNotes !== true) return;
+
+  sess.waitingForNotes = false;
+  data.notes = (text.toLowerCase() === 'none') ? '' : text;
+  sess.requestId = makeRequestId('trv');
+  sess.step = 'confirm_pending';
             {
                 let html = `<b>🧾 Traveler Summary</b>\n\n`;
                 html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
