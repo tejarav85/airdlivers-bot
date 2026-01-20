@@ -1240,7 +1240,7 @@ bot.on('message', async (msg) => {
     const text = (msg.text || '').trim();
     const session = userSessions[chatId];
 
-    // ⛔ HARD BLOCK: Prevent auto-skip of optional notes
+    // ⛔ Prevent skipping optional notes
     if (session?.step === 'optional_notes' && (!text || text.length < 1)) {
       return bot.sendMessage(
         chatId,
@@ -1248,113 +1248,93 @@ bot.on('message', async (msg) => {
         { parse_mode: 'HTML' }
       );
     }
-    try {
-        const chatId = msg.chat.id;
-        const fromId = msg.from.id;
-        const text = (msg.text || '').trim();
-        // 🚫 Suspended user guard
-        const suspended =
-            (await sendersCol.findOne({ userId: chatId, suspended: true })) ||
-            (await travelersCol.findOne({ userId: chatId, suspended: true }));
 
-        if (suspended && !text.startsWith('/start')) {
-            await bot.sendMessage(
-                chatId,
-                `🚫 <b>Your account is suspended.</b>\n\n` +
-                `<b>Reason:</b>\n${escapeHtml(
-                    suspended.suspendReason || 'Contact support'
-                )}` +
-                SUPPORT_TEXT,
-                {
-                    parse_mode: 'HTML',
-                    disable_web_page_preview: true
-                }
-            );
-            return;
-        }
+    // 🚫 Suspended user check
+    const suspended =
+      (await sendersCol.findOne({ userId: chatId, suspended: true })) ||
+      (await travelersCol.findOne({ userId: chatId, suspended: true }));
 
-        // /admin flow
-        if (text === '/admin') {
-            if (String(fromId) === String(SUPER_ADMIN_ID)) {
-                adminAuth[fromId] = { loggedIn: true, super: true, awaitingCustomReasonFor: null };
-                await bot.sendMessage(chatId, '🧠 Super Admin access granted ✅');
-                return;
-            }
-            if (String(chatId) === String(ADMIN_GROUP_ID)) {
-                adminAuth[fromId] = { awaitingPin: true, loggedIn: false, super: false, awaitingCustomReasonFor: null };
-                await bot.sendMessage(chatId, '🔑 Admin login: please reply in this group with the PIN (admins only).');
-                return;
-            }
-            await bot.sendMessage(chatId, '🚫 You are not authorized to use /admin here.');
-            return;
-        }
-
-        // admin PIN in admin group
-        if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingPin) {
-            if (text === String(ADMIN_PIN)) {
-                adminAuth[fromId] = { awaitingPin: false, loggedIn: true, super: false, awaitingCustomReasonFor: null };
-                await bot.sendMessage(
-                    chatId,
-                    `<b>✅ Admin login successful</b> (admin: <code>${escapeHtml(String(fromId))}</code>)`,
-                    { parse_mode: 'HTML' }
-                );
-            } else {
-                adminAuth[fromId] = { awaitingPin: false, loggedIn: false, super: false, awaitingCustomReasonFor: null };
-                await bot.sendMessage(chatId, '❌ Invalid PIN.');
-            }
-            return;
-        }
-
-        // custom reject reason
-        if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingCustomReasonFor) {
-            const reqId = adminAuth[fromId].awaitingCustomReasonFor;
-            const reasonText = text || 'Rejected by admin';
-            await processReject(reqId, `❌ Rejected: ${escapeHtml(reasonText)}`, fromId, null);
-            adminAuth[fromId].awaitingCustomReasonFor = null;
-            return;
-        }
-
-        const session = userSessions[chatId];
-
-        if (!session) {
-            if (!text.startsWith('/')) {
-                const handled = await tryForwardChatMessage(chatId, text);
-                if (handled) return;
-            }
-            return;
-        }
-
-        if (session.type === 'tracking' && session.step === 'tracking_phone') {
-            const phone = text;
-            if (!isValidPhone(phone)) {
-                return bot.sendMessage(chatId, '❌ Invalid phone. Use +911234567890 format.');
-            }
-            const doc =
-                (await sendersCol.findOne({ 'data.phone': phone })) ||
-                (await travelersCol.findOne({ 'data.phone': phone }));
-            if (!doc) {
-                return bot.sendMessage(chatId, '❌ No shipment or traveler found for that number.');
-            }
-            const status = doc.status || 'Pending';
-            const note = doc.adminNote || 'N/A';
-            return bot.sendMessage(
-                chatId,
-                `<b>📦 Status:</b> ${escapeHtml(status)}\n<b>📝 Admin note:</b> ${escapeHtml(note)}`,
-                { parse_mode: 'HTML' }
-            );
-        }
-
-        if (session.type === 'sender') {
-            await handleSenderTextStep(chatId, text);
-            return;
-        }
-        if (session.type === 'traveler') {
-            await handleTravelerTextStep(chatId, text);
-            return;
-        }
-    } catch (err) {
-        console.error('message handler error', err);
+    if (suspended && !text.startsWith('/start')) {
+      return bot.sendMessage(
+        chatId,
+        `🚫 <b>Your account is suspended.</b>\n\n<b>Reason:</b>\n${escapeHtml(
+          suspended.suspendReason || 'Contact support'
+        )}${SUPPORT_TEXT}`,
+        { parse_mode: 'HTML', disable_web_page_preview: true }
+      );
     }
+
+    // /admin
+    if (text === '/admin') {
+      if (String(fromId) === String(SUPER_ADMIN_ID)) {
+        adminAuth[fromId] = { loggedIn: true, super: true };
+        return bot.sendMessage(chatId, '🧠 Super Admin access granted ✅');
+      }
+
+      if (String(chatId) === String(ADMIN_GROUP_ID)) {
+        adminAuth[fromId] = { awaitingPin: true };
+        return bot.sendMessage(chatId, '🔑 Admin login: reply with PIN.');
+      }
+
+      return bot.sendMessage(chatId, '🚫 Not authorized.');
+    }
+
+    // Admin PIN
+    if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingPin) {
+      if (text === String(ADMIN_PIN)) {
+        adminAuth[fromId] = { loggedIn: true };
+        return bot.sendMessage(chatId, '✅ Admin login successful.');
+      } else {
+        adminAuth[fromId] = {};
+        return bot.sendMessage(chatId, '❌ Invalid PIN.');
+      }
+    }
+
+    // If no session → forward chat if matched
+    if (!session) {
+      if (!text.startsWith('/')) {
+        const handled = await tryForwardChatMessage(chatId, text);
+        if (handled) return;
+      }
+      return;
+    }
+
+    // Tracking flow
+    if (session.type === 'tracking' && session.step === 'tracking_phone') {
+      if (!isValidPhone(text)) {
+        return bot.sendMessage(chatId, '❌ Invalid phone number.');
+      }
+
+      const doc =
+        (await sendersCol.findOne({ 'data.phone': text })) ||
+        (await travelersCol.findOne({ 'data.phone': text }));
+
+      if (!doc) {
+        return bot.sendMessage(chatId, '❌ No shipment found.');
+      }
+
+      return bot.sendMessage(
+        chatId,
+        `<b>📦 Status:</b> ${escapeHtml(doc.status || 'Pending')}`,
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    // Sender flow
+    if (session.type === 'sender') {
+      await handleSenderTextStep(chatId, text);
+      return;
+    }
+
+    // Traveler flow
+    if (session.type === 'traveler') {
+      await handleTravelerTextStep(chatId, text);
+      return;
+    }
+
+  } catch (err) {
+    console.error('message handler error', err);
+  }
 });
 
 // ------------------- Photo handler (single, merged) -------------------
