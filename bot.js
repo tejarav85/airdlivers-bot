@@ -367,7 +367,9 @@ async function sendMatchCardToSender(senderDoc, travelerDoc) {
     text += `<b>Traveler Route:</b> ${escapeHtml(t.departure)} → ${escapeHtml(t.destination)}\n`;
     text += `<b>Traveler Schedule:</b>\n  🛫 ${escapeHtml(t.departureTime)}\n  🛬 ${escapeHtml(t.arrivalTime || 'N/A')}\n`;
     text += `<b>Traveler Capacity:</b> ${escapeHtml(String(t.availableWeight))} kg\n\n`;
-
+if (travelerDoc.data?.notes) {
+  text += `<b>Traveler Notes:</b> ${escapeHtml(travelerDoc.data.notes)}\n\n`;
+}
     text += `✅ <b>Verified</b> by admin using ID, phone, passport & itinerary.\n`;
     text += `🔒 Name / phone / email / passport details are hidden until you both confirm.\n`;
 
@@ -407,6 +409,9 @@ async function sendMatchCardToTraveler(travelerDoc, senderDoc) {
     text += `<b>Sender Route:</b> ${escapeHtml(s.pickup)} → ${escapeHtml(s.destination)}\n`;
     text += `<b>Package:</b> ${escapeHtml(String(s.weight))} kg, ${escapeHtml(senderDoc.data?.category || 'N/A')}\n`;
     text += `<b>Send Date:</b> ${escapeHtml(s.sendDate)}\n\n`;
+    if (senderDoc.data?.notes) {
+  text += `<b>Sender Notes:</b> ${escapeHtml(senderDoc.data.notes)}\n\n`;
+}
 
     text += `✅ <b>Verified</b> by admin using ID, phone & documents.\n`;
     text += `🔒 Name / phone / email / passport details are hidden until you both confirm.\n`;
