@@ -1691,9 +1691,6 @@ case 'optional_notes': {
   return;
 }
 }
-
-default:
-  return;
     }
 }
 
