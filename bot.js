@@ -1,6 +1,6 @@
 // bot.js - AirDlivers production bot (webhook + auto-recovery)
 // package.json must have: { "type": "module" }
-
+import fetch from 'node-fetch';
 import 'dotenv/config';
 import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs-extra';
@@ -60,7 +60,45 @@ const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
 // ------------------- EXPRESS SERVER & WEBHOOK -------------------
 const app = express();
 app.use(express.json({ limit: '20mb' }));
+// ------------------- FACEBOOK MESSENGER WEBHOOK -------------------
 
+const FB_PAGE_TOKEN = process.env.FB_PAGE_TOKEN;
+const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
+
+// Verify webhook
+app.get('/messenger', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === FB_VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  res.sendStatus(403);
+});
+
+// Receive messages
+app.post('/messenger', async (req, res) => {
+  try {
+    const entry = req.body.entry?.[0];
+    const event = entry?.messaging?.[0];
+    if (!event || !event.message) return res.sendStatus(200);
+
+    const fakeTelegramMsg = {
+      chat: { id: event.sender.id },
+      from: { id: event.sender.id },
+      text: event.message.text || ''
+    };
+
+    // Send into your existing bot logic
+    await bot.emit('message', fakeTelegramMsg);
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Messenger error:', err);
+    res.sendStatus(500);
+  }
+});
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || null;
 const WEBHOOK_PATH = `/bot${BOT_TOKEN}`;
