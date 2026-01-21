@@ -130,7 +130,7 @@ app.post(WEBHOOK_PATH, (req, res) => {
     console.log('❌ Facebook webhook failed verification');
     res.sendStatus(403);
   }
-});
+};
 app.listen(PORT, async () => {
   console.log(`🌍 HTTP server listening on port ${PORT}`);
 
