@@ -31,6 +31,8 @@ const SUPPORT_TEXT =
     `\n\n📞 <b>Contact Support</b>\n` +
     `🔗 <a href="https://t.me/+CAntejDg9plmNWI0">AirDlivers Support Group</a>\n` +
     `📧 Email: <b>Hrmailsinfo@gmail.com</b>`;
+if (!FB_PAGE_TOKEN) { console.error('FATAL: FB_PAGE_TOKEN missing'); process.exit(1); }
+if (!FB_VERIFY_TOKEN) { console.error('FATAL: FB_VERIFY_TOKEN missing'); process.exit(1); }
 
 // ------------------- JSON backup files -------------------
 const SENDERS_JSON = join(__dirname, 'senders.json');
@@ -108,6 +110,10 @@ const WEBHOOK_URL = BASE_URL ? `${BASE_URL}${WEBHOOK_PATH}` : null;
 app.get('/', (req, res) => {
   res.send('🌍 AirDlivers Telegram bot is running (webhook mode).');
 });
+// test route for Facebook webhook
+app.get('/test', (req, res) => {
+  res.send('Facebook webhook is reachable');
+});
 
 // webhook endpoint
 app.post(WEBHOOK_PATH, (req, res) => {
@@ -116,6 +122,15 @@ app.post(WEBHOOK_PATH, (req, res) => {
 });
 
 // start server + set webhook
+
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('✅ Facebook webhook verified');
+    res.status(200).send(challenge);
+  } else {
+    console.log('❌ Facebook webhook failed verification');
+    res.sendStatus(403);
+  }
+});
 app.listen(PORT, async () => {
   console.log(`🌍 HTTP server listening on port ${PORT}`);
 
