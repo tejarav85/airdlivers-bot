@@ -1483,10 +1483,13 @@ async function handleSenderTextStep(chatId, text) {
             if (!m) return bot.sendMessage(chatId, 'Invalid weight format. Use numbers (e.g., 2.5).');
             const w = parseFloat(m[1]);
             if (isNaN(w) || w <= 0) return bot.sendMessage(chatId, 'Enter a positive weight.');
-            if (w > 10) {
-                userSessions[chatId] = null;
-                return bot.sendMessage(chatId, '❌ Weight > 10kg. Not allowed. Use /start to try again.');
-            }
+         if (w > 10) {
+    return bot.sendMessage(
+        chatId,
+        '❌ Weight must be less than or equal to 10kg.\nPlease enter a valid weight:',
+        { parse_mode: 'HTML' }
+    );
+}
             data.weight = w;
             sess.step = 'package_category';
             return bot.sendMessage(chatId, '📦 Choose package category (inline):', categoryKeyboard);
@@ -1640,10 +1643,13 @@ async function handleTravelerTextStep(chatId, text) {
             if (!m) return bot.sendMessage(chatId, 'Invalid weight. Enter number in kg.');
             const w = parseFloat(m[1]);
             if (isNaN(w) || w <= 0) return bot.sendMessage(chatId, 'Enter positive weight.');
-            if (w > 10) {
-                userSessions[chatId] = null;
-                return bot.sendMessage(chatId, '❌ Weight > 10kg. Not allowed. Use /start.');
-            }
+         if (w > 10) {
+    return bot.sendMessage(
+        chatId,
+        '❌ Weight must be less than or equal to 10kg.\nPlease enter a valid weight:',
+        { parse_mode: 'HTML' }
+    );
+}
             data.availableWeight = w;
             sess.step = 'passport_number';
             return bot.sendMessage(chatId, '🛂 Enter your Passport Number (example: L7982227):', { parse_mode: 'HTML' });
