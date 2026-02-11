@@ -8,6 +8,7 @@ import { MongoClient } from 'mongodb';
 import moment from 'moment';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import cors from "cors";
 import express from 'express';
 
 // ------------------- __dirname for ES modules -------------------
@@ -60,7 +61,7 @@ const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
 // ------------------- EXPRESS SERVER & WEBHOOK -------------------
 const app = express();
 app.use(express.json({ limit: '20mb' }));
-
+app.use(cors());
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || null;
 const WEBHOOK_PATH = `/bot${BOT_TOKEN}`;
