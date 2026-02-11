@@ -12,7 +12,6 @@ import cors from "cors";
 import express from 'express';
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import cors from "cors";
 
 // ------------------- __dirname for ES modules -------------------
 const __filename = fileURLToPath(import.meta.url);
@@ -44,7 +43,7 @@ await fs.ensureFile(SENDERS_JSON);
 await fs.ensureFile(TRAVELERS_JSON);
 
 // ------------------- MongoDB -------------------
-let mongoClient, db, sendersCol, travelersCol, trackingCol;
+let mongoClient, db, sendersCol, travelersCol, trackingCol, usersCol;
 try {
     mongoClient = new MongoClient(MONGO_URI);
     await mongoClient.connect();
@@ -52,7 +51,7 @@ try {
     sendersCol = db.collection('senders');
     travelersCol = db.collection('travelers');
     trackingCol = db.collection('trackingRequests');
-    const usersCol = db.collection("users");
+    usersCol = db.collection("users");
     console.log('✅ MongoDB connected successfully');
 } catch (e) {
     console.error('MongoDB connection error:', e);
@@ -67,6 +66,18 @@ const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use(cors());
+function webAuth(req, res, next) {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ error: "No token" });
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+}
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || null;
 const WEBHOOK_PATH = `/bot${BOT_TOKEN}`;
@@ -76,7 +87,72 @@ const WEBHOOK_URL = BASE_URL ? `${BASE_URL}${WEBHOOK_PATH}` : null;
 app.get('/', (req, res) => {
   res.send('🌍 AirDlivers Telegram bot is running (webhook mode).');
 });
+// ---------------- WEBSITE REGISTER ----------------
+app.post("/api/register", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
 
+    const exist = await usersCol.findOne({ email });
+    if (exist) return res.status(400).json({ error: "Email exists" });
+
+    const hash = await bcrypt.hash(password, 10);
+
+    await usersCol.insertOne({
+      name,
+      email,
+      password: hash,
+      role: "user",
+      createdAt: new Date()
+    });
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Register failed" });
+  }
+});
+// ---------------- WEBSITE LOGIN ----------------
+app.post("/api/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const user = await usersCol.findOne({ email });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) return res.status(400).json({ error: "Wrong password" });
+
+    const token = jwt.sign(
+      { id: user._id.toString(), role: user.role }
+      JWT_SECRET
+    );
+
+    res.json({ token });
+  } catch (e) {
+    res.status(500).json({ error: "Login failed" });
+  }
+});
+// ---------------- WEBSITE CREATE SENDER ----------------
+app.post("/api/sender/create", webAuth, async (req, res) => {
+  try {
+    const requestId = makeRequestId("snd");
+
+    const doc = {
+      requestId,
+      userId: req.user.id,
+      role: "sender",
+      data: req.body,
+      status: "Pending",
+      createdAt: new Date(),
+      matchLocked: false
+    };
+
+    await sendersCol.insertOne(doc);
+
+    res.json({ success: true, requestId });
+  } catch (e) {
+    res.status(500).json({ error: "Failed" });
+  }
+});
 // webhook endpoint
 app.post(WEBHOOK_PATH, (req, res) => {
   bot.processUpdate(req.body);
@@ -98,7 +174,8 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.error('❌ Failed to set webhook:', err.message);
   }
-});// ------------------- Utilities -------------------
+});
+// ------------------- Utilities -------------------
 function escapeHtml(str = '') {
     return String(str)
         .replaceAll('&', '&amp;')
