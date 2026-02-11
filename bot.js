@@ -48,6 +48,7 @@ try {
     sendersCol = db.collection('senders');
     travelersCol = db.collection('travelers');
     trackingCol = db.collection('trackingRequests');
+    const usersCol = db.collection("users");
     console.log('✅ MongoDB connected successfully');
 } catch (e) {
     console.error('MongoDB connection error:', e);
