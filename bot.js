@@ -121,10 +121,10 @@ app.post("/api/login", async (req, res) => {
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(400).json({ error: "Wrong password" });
 
-    const token = jwt.sign(
-      { id: user._id.toString(), role: user.role }
-      JWT_SECRET
-    );
+const token = jwt.sign(
+  { id: user._id.toString(), role: user.role },
+  JWT_SECRET
+);
 
     res.json({ token });
   } catch (e) {
