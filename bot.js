@@ -10,6 +10,9 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import cors from "cors";
 import express from 'express';
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import cors from "cors";
 
 // ------------------- __dirname for ES modules -------------------
 const __filename = fileURLToPath(import.meta.url);
@@ -22,6 +25,7 @@ const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;       // required
 const ADMIN_PIN = process.env.ADMIN_PIN;                 // required
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'airdlivers';
+const JWT_SECRET = process.env.JWT_SECRET || "secret";
 
 
 if (!BOT_TOKEN) { console.error('FATAL: BOT_TOKEN missing'); process.exit(1); }
