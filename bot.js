@@ -66,18 +66,70 @@ const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use(cors());
+// ---------------- WEBSITE AUTH MIDDLEWARE ----------------
 function webAuth(req, res, next) {
     try {
-        const token = req.headers.authorization?.split(" ")[1];
+        const authHeader = req.headers.authorization || "";
+        const token = authHeader.startsWith("Bearer ")
+            ? authHeader.slice(7)
+            : authHeader;
+
         if (!token) return res.status(401).json({ error: "No token" });
 
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded;
         next();
-    } catch {
+    } catch (err) {
         res.status(401).json({ error: "Invalid token" });
     }
 }
+
+
+// ---------------- WEBSITE CHAT START ----------------
+app.post("/api/chat/start", webAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { service } = req.body;
+
+        await usersCol.updateOne(
+            { _id: new ObjectId(userId) },
+            {
+                $set: {
+                    currentService: service,
+                    step: 0,
+                    updatedAt: new Date()
+                }
+            }
+        );
+
+        let reply = "";
+
+        if (service === "sender") {
+            reply = "👤 Enter your Full Name:";
+        } else if (service === "traveler") {
+            reply = "👤 Enter your Full Name:";
+        } else if (service === "track") {
+            reply = "📞 Enter phone number used for shipment:";
+        } else {
+            reply = "Service not recognized.";
+        }
+
+        res.json({ reply });
+    } catch (err) {
+        console.error("chat start error", err);
+        res.status(500).json({ error: "start failed" });
+    }
+});
+
+
+// ---------------- WEBSITE CHAT MESSAGE ----------------
+app.post("/api/chat/message", webAuth, async (req, res) => {
+    const message = req.body.message;
+
+    res.json({
+        reply: "You said: " + message
+    });
+});
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || null;
 const WEBHOOK_PATH = `/bot${BOT_TOKEN}`;
