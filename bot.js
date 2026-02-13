@@ -67,16 +67,16 @@ const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use(cors());
 function webAuth(req, res, next) {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).json({ error: "No token" });
+    try {
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) return res.status(401).json({ error: "No token" });
 
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
-  }
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch {
+        res.status(401).json({ error: "Invalid token" });
+    }
 }
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || null;
@@ -85,95 +85,95 @@ const WEBHOOK_URL = BASE_URL ? `${BASE_URL}${WEBHOOK_PATH}` : null;
 
 // health check
 app.get('/', (req, res) => {
-  res.send('🌍 AirDlivers Telegram bot is running (webhook mode).');
+    res.send('🌍 AirDlivers Telegram bot is running (webhook mode).');
 });
 // ---------------- WEBSITE REGISTER ----------------
 app.post("/api/register", async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
+    try {
+        const { name, email, password } = req.body;
 
-    const exist = await usersCol.findOne({ email });
-    if (exist) return res.status(400).json({ error: "Email exists" });
+        const exist = await usersCol.findOne({ email });
+        if (exist) return res.status(400).json({ error: "Email exists" });
 
-    const hash = await bcrypt.hash(password, 10);
+        const hash = await bcrypt.hash(password, 10);
 
-    await usersCol.insertOne({
-      name,
-      email,
-      password: hash,
-      role: "user",
-      createdAt: new Date()
-    });
+        await usersCol.insertOne({
+            name,
+            email,
+            password: hash,
+            role: "user",
+            createdAt: new Date()
+        });
 
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: "Register failed" });
-  }
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: "Register failed" });
+    }
 });
 // ---------------- WEBSITE LOGIN ----------------
 app.post("/api/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
+    try {
+        const { email, password } = req.body;
 
-    const user = await usersCol.findOne({ email });
-    if (!user) return res.status(404).json({ error: "User not found" });
+        const user = await usersCol.findOne({ email });
+        if (!user) return res.status(404).json({ error: "User not found" });
 
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(400).json({ error: "Wrong password" });
+        const ok = await bcrypt.compare(password, user.password);
+        if (!ok) return res.status(400).json({ error: "Wrong password" });
 
-const token = jwt.sign(
-  { id: user._id.toString(), role: user.role },
-  JWT_SECRET
-);
+        const token = jwt.sign(
+            { id: user._id.toString(), role: user.role },
+            JWT_SECRET
+        );
 
-    res.json({ token });
-  } catch (e) {
-    res.status(500).json({ error: "Login failed" });
-  }
+        res.json({ token });
+    } catch (e) {
+        res.status(500).json({ error: "Login failed" });
+    }
 });
 // ---------------- WEBSITE CREATE SENDER ----------------
 app.post("/api/sender/create", webAuth, async (req, res) => {
-  try {
-    const requestId = makeRequestId("snd");
+    try {
+        const requestId = makeRequestId("snd");
 
-    const doc = {
-      requestId,
-      userId: req.user.id,
-      role: "sender",
-      data: req.body,
-      status: "Pending",
-      createdAt: new Date(),
-      matchLocked: false
-    };
+        const doc = {
+            requestId,
+            userId: req.user.id,
+            role: "sender",
+            data: req.body,
+            status: "Pending",
+            createdAt: new Date(),
+            matchLocked: false
+        };
 
-    await sendersCol.insertOne(doc);
+        await sendersCol.insertOne(doc);
 
-    res.json({ success: true, requestId });
-  } catch (e) {
-    res.status(500).json({ error: "Failed" });
-  }
+        res.json({ success: true, requestId });
+    } catch (e) {
+        res.status(500).json({ error: "Failed" });
+    }
 });
 // webhook endpoint
 app.post(WEBHOOK_PATH, (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
 });
 
 // start server + set webhook
 app.listen(PORT, async () => {
-  console.log(`🌍 HTTP server listening on port ${PORT}`);
+    console.log(`🌍 HTTP server listening on port ${PORT}`);
 
-  if (!WEBHOOK_URL) {
-    console.error('❌ BASE_URL not detected. Webhook not set.');
-    return;
-  }
+    if (!WEBHOOK_URL) {
+        console.error('❌ BASE_URL not detected. Webhook not set.');
+        return;
+    }
 
-  try {
-    await bot.setWebHook(WEBHOOK_URL, { drop_pending_updates: true });
-    console.log('✅ Webhook set successfully:', WEBHOOK_URL);
-  } catch (err) {
-    console.error('❌ Failed to set webhook:', err.message);
-  }
+    try {
+        await bot.setWebHook(WEBHOOK_URL, { drop_pending_updates: true });
+        console.log('✅ Webhook set successfully:', WEBHOOK_URL);
+    } catch (err) {
+        console.error('❌ Failed to set webhook:', err.message);
+    }
 });
 // ------------------- Utilities -------------------
 function escapeHtml(str = '') {
@@ -450,9 +450,9 @@ async function sendMatchCardToSender(senderDoc, travelerDoc) {
     text += `<b>Traveler Route:</b> ${escapeHtml(t.departure)} → ${escapeHtml(t.destination)}\n`;
     text += `<b>Traveler Schedule:</b>\n  🛫 ${escapeHtml(t.departureTime)}\n  🛬 ${escapeHtml(t.arrivalTime || 'N/A')}\n`;
     text += `<b>Traveler Capacity:</b> ${escapeHtml(String(t.availableWeight))} kg\n\n`;
-if (travelerDoc.data?.notes) {
-  text += `<b>Traveler Notes:</b> ${escapeHtml(travelerDoc.data.notes)}\n\n`;
-}
+    if (travelerDoc.data?.notes) {
+        text += `<b>Traveler Notes:</b> ${escapeHtml(travelerDoc.data.notes)}\n\n`;
+    }
     text += `✅ <b>Verified</b> by admin using ID, phone, passport & itinerary.\n`;
     text += `🔒 Name / phone / email / passport details are hidden until you both confirm.\n`;
 
@@ -493,8 +493,8 @@ async function sendMatchCardToTraveler(travelerDoc, senderDoc) {
     text += `<b>Package:</b> ${escapeHtml(String(s.weight))} kg, ${escapeHtml(senderDoc.data?.category || 'N/A')}\n`;
     text += `<b>Send Date:</b> ${escapeHtml(s.sendDate)}\n\n`;
     if (senderDoc.data?.notes) {
-  text += `<b>Sender Notes:</b> ${escapeHtml(senderDoc.data.notes)}\n\n`;
-}
+        text += `<b>Sender Notes:</b> ${escapeHtml(senderDoc.data.notes)}\n\n`;
+    }
 
     text += `✅ <b>Verified</b> by admin using ID, phone & documents.\n`;
     text += `🔒 Name / phone / email / passport details are hidden until you both confirm.\n`;
@@ -886,68 +886,68 @@ bot.onText(/^\/(suspend|unsuspend|terminate)\s+(\d+)\s*(.*)?$/i, async (msg, mat
 });
 //-------------------- Delivered--------------------///
 bot.onText(/^\/delivered$/i, async (msg) => {
-  try {
-    const chatId = msg.chat.id;
+    try {
+        const chatId = msg.chat.id;
 
-    const myDoc = await findActiveMatchForUser(chatId);
+        const myDoc = await findActiveMatchForUser(chatId);
 
-    // ❌ No active match
-    if (!myDoc) {
-      return bot.sendMessage(chatId, 
-        '❌ You don’t have any current shipment in process.',
-        { parse_mode: 'HTML' }
-      );
+        // ❌ No active match
+        if (!myDoc) {
+            return bot.sendMessage(chatId,
+                '❌ You don’t have any current shipment in process.',
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        // ❌ Already completed
+        if (myDoc.deliveryCompleted) {
+            return bot.sendMessage(chatId,
+                'You don’t have any current shipment in process.',
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        // ✅ Mark completed
+        const col = myDoc.role === 'sender' ? sendersCol : travelersCol;
+
+        await col.updateOne(
+            { requestId: myDoc.requestId },
+            { $set: { deliveryCompleted: true, deliveryCompletedAt: new Date() } }
+        );
+
+        const otherCol = myDoc.role === 'sender' ? travelersCol : sendersCol;
+        const otherDoc = await otherCol.findOne({ requestId: myDoc.matchedWith });
+
+        if (otherDoc) {
+            await otherCol.updateOne(
+                { requestId: otherDoc.requestId },
+                { $set: { deliveryCompleted: true, deliveryCompletedAt: new Date() } }
+            );
+        }
+
+        // Notify users
+        await bot.sendMessage(chatId,
+            '📦 <b>Delivery marked as completed.</b>\nThank you for using AirDlivers!',
+            { parse_mode: 'HTML', ...mainMenuInline }
+        );
+
+        if (otherDoc) {
+            await bot.sendMessage(otherDoc.userId,
+                '📦 <b>Delivery marked as completed.</b>\nThank you for using AirDlivers!',
+                { parse_mode: 'HTML', ...mainMenuInline }
+            );
+        }
+
+        // 🔔 Notify admin
+        await bot.sendMessage(String(ADMIN_GROUP_ID),
+            `📦 <b>Delivery Completed</b>\nSender/Traveler ID: <code>${myDoc.requestId}</code>`,
+            { parse_mode: 'HTML' }
+        );
+
+    } catch (err) {
+        console.error('/delivered error', err);
+        bot.sendMessage(msg.chat.id, '❌ Error marking delivery as completed.');
     }
-
-    // ❌ Already completed
-    if (myDoc.deliveryCompleted) {
-      return bot.sendMessage(chatId,
-        'You don’t have any current shipment in process.',
-        { parse_mode: 'HTML' }
-      );
-    }
-
-    // ✅ Mark completed
-    const col = myDoc.role === 'sender' ? sendersCol : travelersCol;
-
-    await col.updateOne(
-      { requestId: myDoc.requestId },
-      { $set: { deliveryCompleted: true, deliveryCompletedAt: new Date() } }
-    );
-
-    const otherCol = myDoc.role === 'sender' ? travelersCol : sendersCol;
-    const otherDoc = await otherCol.findOne({ requestId: myDoc.matchedWith });
-
-    if (otherDoc) {
-      await otherCol.updateOne(
-        { requestId: otherDoc.requestId },
-        { $set: { deliveryCompleted: true, deliveryCompletedAt: new Date() } }
-      );
-    }
-
-    // Notify users
-    await bot.sendMessage(chatId,
-      '📦 <b>Delivery marked as completed.</b>\nThank you for using AirDlivers!',
-      { parse_mode: 'HTML', ...mainMenuInline }
-    );
-
-    if (otherDoc) {
-      await bot.sendMessage(otherDoc.userId,
-        '📦 <b>Delivery marked as completed.</b>\nThank you for using AirDlivers!',
-        { parse_mode: 'HTML', ...mainMenuInline }
-      );
-    }
-
-    // 🔔 Notify admin
-    await bot.sendMessage(String(ADMIN_GROUP_ID),
-      `📦 <b>Delivery Completed</b>\nSender/Traveler ID: <code>${myDoc.requestId}</code>`,
-      { parse_mode: 'HTML' }
-    );
-
-  } catch (err) {
-    console.error('/delivered error', err);
-    bot.sendMessage(msg.chat.id, '❌ Error marking delivery as completed.');
-  }
 });
 bot.onText(/\/start/, async (msg) => {
     try {
@@ -1322,98 +1322,98 @@ AirDlivers is not liable for loss, delays, customs issues, or disputes.
 
 // ------------------- Text message handler -------------------
 bot.on('message', async (msg) => {
-  try {
-    const chatId = msg.chat.id;
-    const fromId = msg.from.id;
-    const text = (msg.text || '').trim();
-    const session = userSessions[chatId];
+    try {
+        const chatId = msg.chat.id;
+        const fromId = msg.from.id;
+        const text = (msg.text || '').trim();
+        const session = userSessions[chatId];
 
-    // 🚫 Suspended user check
-    const suspended =
-      (await sendersCol.findOne({ userId: chatId, suspended: true })) ||
-      (await travelersCol.findOne({ userId: chatId, suspended: true }));
+        // 🚫 Suspended user check
+        const suspended =
+            (await sendersCol.findOne({ userId: chatId, suspended: true })) ||
+            (await travelersCol.findOne({ userId: chatId, suspended: true }));
 
-    if (suspended && !text.startsWith('/start')) {
-      return bot.sendMessage(
-        chatId,
-        `🚫 <b>Your account is suspended.</b>\n\n<b>Reason:</b>\n${escapeHtml(
-          suspended.suspendReason || 'Contact support'
-        )}${SUPPORT_TEXT}`,
-        { parse_mode: 'HTML', disable_web_page_preview: true }
-      );
+        if (suspended && !text.startsWith('/start')) {
+            return bot.sendMessage(
+                chatId,
+                `🚫 <b>Your account is suspended.</b>\n\n<b>Reason:</b>\n${escapeHtml(
+                    suspended.suspendReason || 'Contact support'
+                )}${SUPPORT_TEXT}`,
+                { parse_mode: 'HTML', disable_web_page_preview: true }
+            );
+        }
+
+        // /admin
+        if (text === '/admin') {
+            if (String(fromId) === String(SUPER_ADMIN_ID)) {
+                adminAuth[fromId] = { loggedIn: true, super: true };
+                return bot.sendMessage(chatId, '🧠 Super Admin access granted ✅');
+            }
+
+            if (String(chatId) === String(ADMIN_GROUP_ID)) {
+                adminAuth[fromId] = { awaitingPin: true };
+                return bot.sendMessage(chatId, '🔑 Admin login: reply with PIN.');
+            }
+
+            return bot.sendMessage(chatId, '🚫 Not authorized.');
+        }
+
+        // Admin PIN
+        if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingPin) {
+            if (text === String(ADMIN_PIN)) {
+                adminAuth[fromId] = { loggedIn: true };
+                return bot.sendMessage(chatId, '✅ Admin login successful.');
+            } else {
+                adminAuth[fromId] = {};
+                return bot.sendMessage(chatId, '❌ Invalid PIN.');
+            }
+        }
+
+        // If no session → forward chat if matched
+        if (!session) {
+            if (!text.startsWith('/')) {
+                const handled = await tryForwardChatMessage(chatId, text);
+                if (handled) return;
+            }
+            return;
+        }
+
+        // Tracking flow
+        if (session.type === 'tracking' && session.step === 'tracking_phone') {
+            if (!isValidPhone(text)) {
+                return bot.sendMessage(chatId, '❌ Invalid phone number.');
+            }
+
+            const doc =
+                (await sendersCol.findOne({ 'data.phone': text })) ||
+                (await travelersCol.findOne({ 'data.phone': text }));
+
+            if (!doc) {
+                return bot.sendMessage(chatId, '❌ No shipment found.');
+            }
+
+            return bot.sendMessage(
+                chatId,
+                `<b>📦 Status:</b> ${escapeHtml(doc.status || 'Pending')}`,
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        // Sender flow
+        if (session.type === 'sender') {
+            await handleSenderTextStep(chatId, text);
+            return;
+        }
+
+        // Traveler flow
+        if (session.type === 'traveler') {
+            await handleTravelerTextStep(chatId, text);
+            return;
+        }
+
+    } catch (err) {
+        console.error('message handler error', err);
     }
-
-    // /admin
-    if (text === '/admin') {
-      if (String(fromId) === String(SUPER_ADMIN_ID)) {
-        adminAuth[fromId] = { loggedIn: true, super: true };
-        return bot.sendMessage(chatId, '🧠 Super Admin access granted ✅');
-      }
-
-      if (String(chatId) === String(ADMIN_GROUP_ID)) {
-        adminAuth[fromId] = { awaitingPin: true };
-        return bot.sendMessage(chatId, '🔑 Admin login: reply with PIN.');
-      }
-
-      return bot.sendMessage(chatId, '🚫 Not authorized.');
-    }
-
-    // Admin PIN
-    if (String(chatId) === String(ADMIN_GROUP_ID) && adminAuth[fromId]?.awaitingPin) {
-      if (text === String(ADMIN_PIN)) {
-        adminAuth[fromId] = { loggedIn: true };
-        return bot.sendMessage(chatId, '✅ Admin login successful.');
-      } else {
-        adminAuth[fromId] = {};
-        return bot.sendMessage(chatId, '❌ Invalid PIN.');
-      }
-    }
-
-    // If no session → forward chat if matched
-    if (!session) {
-      if (!text.startsWith('/')) {
-        const handled = await tryForwardChatMessage(chatId, text);
-        if (handled) return;
-      }
-      return;
-    }
-
-    // Tracking flow
-    if (session.type === 'tracking' && session.step === 'tracking_phone') {
-      if (!isValidPhone(text)) {
-        return bot.sendMessage(chatId, '❌ Invalid phone number.');
-      }
-
-      const doc =
-        (await sendersCol.findOne({ 'data.phone': text })) ||
-        (await travelersCol.findOne({ 'data.phone': text }));
-
-      if (!doc) {
-        return bot.sendMessage(chatId, '❌ No shipment found.');
-      }
-
-      return bot.sendMessage(
-        chatId,
-        `<b>📦 Status:</b> ${escapeHtml(doc.status || 'Pending')}`,
-        { parse_mode: 'HTML' }
-      );
-    }
-
-    // Sender flow
-    if (session.type === 'sender') {
-      await handleSenderTextStep(chatId, text);
-      return;
-    }
-
-    // Traveler flow
-    if (session.type === 'traveler') {
-      await handleTravelerTextStep(chatId, text);
-      return;
-    }
-
-  } catch (err) {
-    console.error('message handler error', err);
-  }
 });
 
 // ------------------- Photo handler (single, merged) -------------------
@@ -1437,8 +1437,8 @@ bot.on('photo', async (msg) => {
                     session.data.selfieId = fileId;
                     session.expectingPhoto = null;
                     session.step = 'optional_notes';
-session.waitingForNotes = true;
-await bot.sendMessage(chatId, "📝 Add optional notes or type 'None':", { parse_mode: 'HTML' });
+                    session.waitingForNotes = true;
+                    await bot.sendMessage(chatId, "📝 Add optional notes or type 'None':", { parse_mode: 'HTML' });
                     return;
                 }
             }
@@ -1566,39 +1566,39 @@ async function handleSenderTextStep(chatId, text) {
             if (!m) return bot.sendMessage(chatId, 'Invalid weight format. Use numbers (e.g., 2.5).');
             const w = parseFloat(m[1]);
             if (isNaN(w) || w <= 0) return bot.sendMessage(chatId, 'Enter a positive weight.');
-         if (w > 10) {
-    return bot.sendMessage(
-        chatId,
-        '❌ Weight must be less than or equal to 10kg.\nPlease enter a valid weight:',
-        { parse_mode: 'HTML' }
-    );
-}
+            if (w > 10) {
+                return bot.sendMessage(
+                    chatId,
+                    '❌ Weight must be less than or equal to 10kg.\nPlease enter a valid weight:',
+                    { parse_mode: 'HTML' }
+                );
+            }
             data.weight = w;
             sess.step = 'package_category';
             return bot.sendMessage(chatId, '📦 Choose package category (inline):', categoryKeyboard);
         }
 
-       case 'send_date': {
+        case 'send_date': {
 
-  if (!text || text.trim().length === 0) {
-    return; // do nothing, wait for user input
-  }
+            if (!text || text.trim().length === 0) {
+                return; // do nothing, wait for user input
+            }
 
-  const d = parseDate_ddmmyyyy(text);
+            const d = parseDate_ddmmyyyy(text);
 
-  if (!d) {
-    return bot.sendMessage(chatId, '📅 Please enter Send Date in DD-MM-YYYY format.');
-  }
+            if (!d) {
+                return bot.sendMessage(chatId, '📅 Please enter Send Date in DD-MM-YYYY format.');
+            }
 
-  if (d < todayStart()) {
-    return bot.sendMessage(chatId, 'Send Date cannot be in the past.');
-  }
+            if (d < todayStart()) {
+                return bot.sendMessage(chatId, 'Send Date cannot be in the past.');
+            }
 
-  data.sendDate = moment(d).format('DD-MM-YYYY');
-  sess.step = 'arrival_date';
+            data.sendDate = moment(d).format('DD-MM-YYYY');
+            sess.step = 'arrival_date';
 
-  return bot.sendMessage(chatId, '📅 Enter Arrival Date (DD-MM-YYYY):', { parse_mode: 'HTML' });
-}
+            return bot.sendMessage(chatId, '📅 Enter Arrival Date (DD-MM-YYYY):', { parse_mode: 'HTML' });
+        }
 
         case 'arrival_date': {
             const d = parseDate_ddmmyyyy(text);
@@ -1618,39 +1618,39 @@ async function handleSenderTextStep(chatId, text) {
             );
         }
 
-case 'optional_notes':
+        case 'optional_notes':
 
-  if (sess.waitingForNotes) {
-    sess.waitingForNotes = false;
-    return; // wait for user reply
-  }
+            if (sess.waitingForNotes) {
+                sess.waitingForNotes = false;
+                return; // wait for user reply
+            }
 
-  if (!text || text.length < 1) {
-    return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
-  }
- 
-  data.notes = (text.toLowerCase() === 'none') ? '' : text;
-  sess.requestId = makeRequestId('snd');
-  sess.step = 'confirm_pending';
+            if (!text || text.length < 1) {
+                return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
+            }
 
-  let html = `<b>🧾 Sender Summary</b>\n\n`;
-  html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
-  html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
-  html += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
-  html += `<b>Email:</b> ${escapeHtml(data.email)}\n`;
-  html += `<b>Pickup:</b> ${escapeHtml(data.pickup)}\n`;
-  html += `<b>Destination:</b> ${escapeHtml(data.destination)}\n`;
-  html += `<b>Weight:</b> ${escapeHtml(String(data.weight))} kg\n`;
-  html += `<b>Category:</b> ${escapeHtml(data.category)}\n`;
-  html += `<b>Send:</b> ${escapeHtml(data.sendDate)}\n`;
-  html += `<b>Arrival:</b> ${escapeHtml(data.arrivalDate)}\n`;
-  if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
+            data.notes = (text.toLowerCase() === 'none') ? '' : text;
+            sess.requestId = makeRequestId('snd');
+            sess.step = 'confirm_pending';
 
-  await bot.sendMessage(chatId, html, {
-    parse_mode: 'HTML',
-    ...confirmKeyboard('sender', sess.requestId)
-  });
-  return;
+            let html = `<b>🧾 Sender Summary</b>\n\n`;
+            html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
+            html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
+            html += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
+            html += `<b>Email:</b> ${escapeHtml(data.email)}\n`;
+            html += `<b>Pickup:</b> ${escapeHtml(data.pickup)}\n`;
+            html += `<b>Destination:</b> ${escapeHtml(data.destination)}\n`;
+            html += `<b>Weight:</b> ${escapeHtml(String(data.weight))} kg\n`;
+            html += `<b>Category:</b> ${escapeHtml(data.category)}\n`;
+            html += `<b>Send:</b> ${escapeHtml(data.sendDate)}\n`;
+            html += `<b>Arrival:</b> ${escapeHtml(data.arrivalDate)}\n`;
+            if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
+
+            await bot.sendMessage(chatId, html, {
+                parse_mode: 'HTML',
+                ...confirmKeyboard('sender', sess.requestId)
+            });
+            return;
     }
 }
 
@@ -1726,13 +1726,13 @@ async function handleTravelerTextStep(chatId, text) {
             if (!m) return bot.sendMessage(chatId, 'Invalid weight. Enter number in kg.');
             const w = parseFloat(m[1]);
             if (isNaN(w) || w <= 0) return bot.sendMessage(chatId, 'Enter positive weight.');
-         if (w > 10) {
-    return bot.sendMessage(
-        chatId,
-        '❌ Weight must be less than or equal to 10kg.\nPlease enter a valid weight:',
-        { parse_mode: 'HTML' }
-    );
-}
+            if (w > 10) {
+                return bot.sendMessage(
+                    chatId,
+                    '❌ Weight must be less than or equal to 10kg.\nPlease enter a valid weight:',
+                    { parse_mode: 'HTML' }
+                );
+            }
             data.availableWeight = w;
             sess.step = 'passport_number';
             return bot.sendMessage(chatId, '🛂 Enter your Passport Number (example: L7982227):', { parse_mode: 'HTML' });
@@ -1747,44 +1747,44 @@ async function handleTravelerTextStep(chatId, text) {
             sess.step = 'passport_selfie';
             return bot.sendMessage(chatId, '📸 Upload a selfie holding your passport (mandatory):', { parse_mode: 'HTML' });
 
-case 'optional_notes': {
+        case 'optional_notes': {
 
-  // First time entering this step → just wait for user input
-  if (sess.waitingForNotes) {
-    sess.waitingForNotes = false;
-    return;
-  }
+            // First time entering this step → just wait for user input
+            if (sess.waitingForNotes) {
+                sess.waitingForNotes = false;
+                return;
+            }
 
-  // Now validate the actual user reply
-  if (!text || text.length < 1) {
-    return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
-  }
+            // Now validate the actual user reply
+            if (!text || text.length < 1) {
+                return bot.sendMessage(chatId, "📝 Please type your notes or 'None' to continue.");
+            }
 
-  data.notes = (text.toLowerCase() === 'none') ? '' : text;
+            data.notes = (text.toLowerCase() === 'none') ? '' : text;
 
-  sess.requestId = makeRequestId('trv');
-  sess.step = 'confirm_pending';
+            sess.requestId = makeRequestId('trv');
+            sess.step = 'confirm_pending';
 
-  let html = `<b>🧾 Traveler Summary</b>\n\n`;
-  html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
-  html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
-  html += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
-  html += `<b>From:</b> ${escapeHtml(data.departure)} (${escapeHtml(data.departureCountry)})\n`;
-  html += `<b>To:</b> ${escapeHtml(data.destination)} (${escapeHtml(data.arrivalCountry)})\n`;
-  html += `<b>Departure:</b> ${escapeHtml(data.departureTime)}\n`;
-  html += `<b>Arrival:</b> ${escapeHtml(data.arrivalTime)}\n`;
-  html += `<b>Available Weight:</b> ${escapeHtml(String(data.availableWeight))} kg\n`;
-  html += `<b>Passport:</b> ${escapeHtml(data.passportNumber)}\n`;
-  if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
+            let html = `<b>🧾 Traveler Summary</b>\n\n`;
+            html += `<b>Request ID:</b> <code>${escapeHtml(sess.requestId)}</code>\n`;
+            html += `<b>Name:</b> ${escapeHtml(data.name)}\n`;
+            html += `<b>Phone:</b> ${escapeHtml(data.phone)}\n`;
+            html += `<b>From:</b> ${escapeHtml(data.departure)} (${escapeHtml(data.departureCountry)})\n`;
+            html += `<b>To:</b> ${escapeHtml(data.destination)} (${escapeHtml(data.arrivalCountry)})\n`;
+            html += `<b>Departure:</b> ${escapeHtml(data.departureTime)}\n`;
+            html += `<b>Arrival:</b> ${escapeHtml(data.arrivalTime)}\n`;
+            html += `<b>Available Weight:</b> ${escapeHtml(String(data.availableWeight))} kg\n`;
+            html += `<b>Passport:</b> ${escapeHtml(data.passportNumber)}\n`;
+            if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
 
-  await bot.sendMessage(chatId, html, {
-    parse_mode: 'HTML',
-    ...confirmKeyboard('traveler', sess.requestId)
-  });
+            await bot.sendMessage(chatId, html, {
+                parse_mode: 'HTML',
+                ...confirmKeyboard('traveler', sess.requestId)
+            });
 
-  return;
-}
-}
+            return;
+        }
+    }
 
 }
 
