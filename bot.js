@@ -66,51 +66,7 @@ const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use(cors());
-function webAuth(req, res, next)
-// ---------------- WEBSITE CHAT START ----------------
-app.post("/api/chat/start", webAuth, async (req, res) => {
-    try {
-        const userId = req.user.id;   // from JWT
-        const { service } = req.body;
-
-        await usersCol.updateOne(
-            { _id: new ObjectId(userId) },
-            {
-                $set: {
-                    currentService: service,
-                    step: 0,
-                    updatedAt: new Date()
-                }
-            }
-        );
-
-        let reply = "";
-
-        if (service === "sender") {
-            reply = "👤 Enter your Full Name:";
-        } else if (service === "traveler") {
-            reply = "👤 Enter your Full Name:";
-        } else if (service === "track") {
-            reply = "📞 Enter phone number used for shipment:";
-        } else {
-            reply = "Service not recognized.";
-        }
-
-        res.json({ reply });
-    } catch (err) {
-        console.error("chat start error", err);
-        res.status(500).json({ error: "start failed" });
-    }
-});
-// ---------------- WEBSITE CHAT MESSAGE ----------------
-app.post("/api/chat/message", webAuth, async (req, res) => {
-    const message = req.body.message;
-
-    res.json({
-        reply: "You said: " + message
-    });
-});
-{
+function webAuth(req, res, next) {
     try {
         const token = req.headers.authorization?.split(" ")[1];
         if (!token) return res.status(401).json({ error: "No token" });
