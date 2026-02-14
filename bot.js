@@ -2209,7 +2209,6 @@ console.log('✅ AirDlivers bot (webhook + auto-recovery) is running...');// bot
 // package.json must have: { "type": "module" }
 
 import 'dotenv/config';
-import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs-extra';
 import { MongoClient, ObjectId } from 'mongodb';
 import moment from 'moment';
