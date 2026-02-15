@@ -168,9 +168,9 @@ app.post("/api/chat/message", webAuth, async (req, res) => {
         let botReply = "";
         const originalSend = bot.sendMessage;
 
-        bot.sendMessage = async (cid, text) => {
-            if (cid === chatId) botReply = text;
-        };
+     bot.sendMessage = async (cid, text) => {
+    if (!botReply) botReply = text;
+};
 
         // run original brain
         if (userSessions[chatId].type === "sender") {
