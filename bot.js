@@ -396,28 +396,29 @@ session example:
 const adminAuth = {}; // userId -> { awaitingPin, loggedIn, super, awaitingCustomReasonFor }
 
 // ------------------- Keyboards -------------------
-const categoryKeyboard = {
-    reply_markup: {
-        inline_keyboard: [
-            [
-                { text: '📄 Documents', callback_data: 'cat_Documents' },
-                { text: '🥇 Gold (with bill)', callback_data: 'cat_Gold' }
-            ],
-            [
-                { text: '💊 Medicines (prescription)', callback_data: 'cat_Medicines' },
-                { text: '👕 Clothes', callback_data: 'cat_Clothes' }
-            ],
-            [
-                { text: '🍱 Food (sealed)', callback_data: 'cat_Food' },
-                { text: '💻 Electronics (with bill)', callback_data: 'cat_Electronics' }
-            ],
-            [
-                { text: '🎁 Gifts', callback_data: 'cat_Gifts' },
-                { text: '⚠️ Prohibited items', callback_data: 'cat_Prohibited' }
+function categoryKeyboardMulti(selected = []) {
+    const items = [
+        "Documents",
+        "Gold",
+        "Medicines",
+        "Clothes",
+        "Food",
+        "Electronics",
+        "Gifts"
+    ];
+
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                ...items.map(i => [{
+                    text: `${selected.includes(i) ? "✅" : "☐"} ${i}`,
+                    callback_data: `cat_${i}`
+                }]),
+                [{ text: "✔ Done", callback_data: "cat_done" }]
             ]
-        ]
-    }
-};
+        }
+    };
+}
 
 function confirmKeyboard(role, requestId) {
     return {
@@ -1239,22 +1240,53 @@ bot.on('callback_query', async (query) => {
         }
 
         // categories
-        if (data && data.startsWith('cat_')) {
-            const session = userSessions[chatId];
-            if (!session || session.type !== 'sender' || session.step !== 'package_category') {
-                return bot.answerCallbackQuery(query.id, { text: 'Category not expected now. Please follow the flow.' });
-            }
-            const category = data.replace('cat_', '');
-            if (category === 'Prohibited') {
-                await bot.sendMessage(chatId, '⚠️ Prohibited items are not allowed. See Help / Support for details.');
-                return bot.sendMessage(chatId, 'Choose a valid category:', categoryKeyboard);
-            }
-            session.data.category = category;
-            session.step = 'package_photo';
-            session.expectingPhoto = 'package_photo';
-            await bot.sendMessage(chatId, '📷 Upload a photo of the package (mandatory):', { parse_mode: 'HTML' });
-            return bot.answerCallbackQuery(query.id);
+   if (data && data.startsWith('cat_')) {
+    const session = userSessions[chatId];
+    if (!session || session.type !== 'sender' || session.step !== 'package_category') {
+        return bot.answerCallbackQuery(query.id);
+    }
+
+    const value = data.replace('cat_', '');
+
+    // DONE
+    if (value === 'done') {
+        if (!session.data.category || session.data.category.length === 0) {
+            return bot.answerCallbackQuery(query.id, { text: "Select at least one." });
         }
+
+        session.step = 'package_photo';
+        session.expectingPhoto = 'package_photo';
+
+        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+            chat_id: chatId,
+            message_id: query.message.message_id
+        });
+
+        await bot.sendMessage(chatId, '📷 Upload a photo of the package (mandatory):');
+        return;
+    }
+
+    // TOGGLE
+    if (!session.data.category) session.data.category = [];
+
+    const arr = session.data.category;
+
+    if (arr.includes(value)) {
+        session.data.category = arr.filter(x => x !== value);
+    } else {
+        arr.push(value);
+    }
+
+    await bot.editMessageReplyMarkup(
+        categoryKeyboardMulti(session.data.category).reply_markup,
+        {
+            chat_id: chatId,
+            message_id: query.message.message_id
+        }
+    );
+
+    return bot.answerCallbackQuery(query.id);
+}
 
         // confirmations
         if (data && data.startsWith('confirm_')) {
@@ -1688,7 +1720,12 @@ async function handleSenderTextStep(chatId, text) {
             }
             data.weight = w;
             sess.step = 'package_category';
-            return bot.sendMessage(chatId, '📦 Choose package category (inline):', categoryKeyboard);
+sess.data.category = [];
+return bot.sendMessage(
+    chatId,
+    '📦 Choose package category (you can select multiple):',
+    categoryKeyboardMulti([])
+);
         }
 
         case 'send_date': {
@@ -1754,7 +1791,7 @@ async function handleSenderTextStep(chatId, text) {
             html += `<b>Pickup:</b> ${escapeHtml(data.pickup)}\n`;
             html += `<b>Destination:</b> ${escapeHtml(data.destination)}\n`;
             html += `<b>Weight:</b> ${escapeHtml(String(data.weight))} kg\n`;
-            html += `<b>Category:</b> ${escapeHtml(data.category)}\n`;
+            html += `<b>Category:</b> ${escapeHtml((data.category || []).join(", "))}\n`;
             html += `<b>Send:</b> ${escapeHtml(data.sendDate)}\n`;
             html += `<b>Arrival:</b> ${escapeHtml(data.arrivalDate)}\n`;
             if (data.notes) html += `<b>Notes:</b> ${escapeHtml(data.notes)}\n`;
@@ -1933,7 +1970,7 @@ async function handleFinalSenderSubmit(chatId, session) {
         summary += `<b>Pickup:</b> ${escapeHtml(session.data.pickup)}\n`;
         summary += `<b>Destination:</b> ${escapeHtml(session.data.destination)}\n`;
         summary += `<b>Weight:</b> ${escapeHtml(String(session.data.weight))} kg\n`;
-        summary += `<b>Category:</b> ${escapeHtml(session.data.category)}\n`;
+       summary += `<b>Category:</b> ${escapeHtml((session.data.category || []).join(", "))}\n`;
         summary += `<b>Send:</b> ${escapeHtml(session.data.sendDate)}\n`;
         summary += `<b>Arrival:</b> ${escapeHtml(session.data.arrivalDate)}\n`;
         if (session.data.notes) summary += `<b>Notes:</b> ${escapeHtml(session.data.notes)}\n`;
