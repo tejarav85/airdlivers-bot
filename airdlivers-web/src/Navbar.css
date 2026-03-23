@@ -1,0 +1,327 @@
+.navbar {
+    background-color: #fff;
+    border-bottom: 1px solid #eaeaea;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
+.navbar-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 70px;
+}
+
+.navbar-left {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+}
+
+.navbar-logo {
+    font-size: 24px;
+    font-weight: 800;
+    color: #007bff;
+    cursor: pointer;
+    letter-spacing: -0.5px;
+}
+
+.navbar-links {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+}
+
+.nav-item {
+    font-weight: 600;
+    color: #555;
+    cursor: pointer;
+    transition: color 0.2s;
+    position: relative;
+    font-size: 15px;
+}
+
+.nav-item:hover {
+    color: #007bff;
+}
+
+.dropdown {
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.dropdown-label {
+    padding: 10px 0;
+    display: inline-block;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    padding-top: 10px;
+    margin-top: 5px;
+    left: 0;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    padding: 10px 0;
+    min-width: 240px;
+    border: 1px solid #f0f0f0;
+    z-index: 1001;
+}
+
+.dropdown-menu::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: 0;
+    right: 0;
+    height: 20px;
+}
+
+.dropdown-item {
+    padding: 14px 24px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    font-weight: 600;
+    color: #444;
+    font-size: 15px;
+}
+
+.dropdown-item:hover {
+    background: #f8faff;
+    color: #007bff;
+}
+
+.navbar-right {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+}
+
+.auth-btn {
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    transition: transform 0.2s, background-color 0.2s;
+    font-family: inherit;
+}
+
+.login-btn {
+    background-color: #007bff;
+    color: white;
+}
+
+.login-btn:hover {
+    background-color: #0062cc;
+    transform: translateY(-1px);
+}
+
+.logout-btn {
+    background-color: #fee2e2;
+    color: #dc2626;
+}
+
+.logout-btn:hover {
+    background-color: #fecaca;
+    transform: translateY(-1px);
+}
+
+.mobile-toggle {
+    display: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #111;
+    z-index: 2000;
+}
+
+/* Mobile Menu Overlay & Panel */
+.mobile-menu-overlay {
+    position: fixed;
+    top: 70px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 1500;
+    animation: fadeIn 0.2s ease;
+}
+
+.mobile-menu-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 80%;
+    max-width: 320px;
+    height: 100%;
+    background-color: #fff;
+    box-shadow: -5px 0 20px rgba(0,0,0,0.1);
+    padding: 30px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow-y: auto;
+}
+
+.mobile-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 15px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.mobile-nav-item:hover, .mobile-nav-item:active {
+    background-color: #f5f7fa;
+    color: #007bff;
+}
+
+.mobile-nav-item-group {
+    background-color: #f9fbfd;
+    border-radius: 12px;
+    padding: 15px;
+    margin: 5px 0;
+    border: 1px solid #edf1f7;
+}
+
+.mobile-group-title {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #888;
+    margin-bottom: 12px;
+    padding-left: 5px;
+    letter-spacing: 0.5px;
+}
+
+.mobile-sub-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 10px;
+    font-size: 15px;
+    font-weight: 500;
+    color: #444;
+    cursor: pointer;
+    border-radius: 6px;
+    margin-bottom: 4px;
+}
+.mobile-sub-item:last-child {
+    margin-bottom: 0;
+}
+
+.mobile-sub-item:hover, .mobile-sub-item:active {
+    background-color: #eef2f6;
+    color: #007bff;
+}
+
+.mobile-menu-footer {
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px solid #eaeaea;
+}
+
+.w-full {
+    width: 100%;
+}
+.justify-center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+/* Responsiveness */
+@media (max-width: 860px) {
+    .navbar-container {
+        height: 70px;
+    }
+
+    .desktop-only {
+        display: none !important;
+    }
+
+    .mobile-toggle {
+        display: block;
+    }
+}
+
+.notification-bell {
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+  color: #555;
+  margin-right: 15px;
+}
+.notification-bell:hover { background-color: #f0f7ff; color: #007bff; }
+.notification-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background-color: #dc3545;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #fff;
+}
+.notification-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+  min-width: 200px;
+  z-index: 2000;
+  padding: 8px 0;
+  margin-top: 10px;
+}
+.notification-item {
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 14px;
+  color: #333;
+}
+.notification-item:hover { background-color: #f8faff; color: #007bff; }
