@@ -289,7 +289,7 @@ export default function Chat({ token, service, logout, back, chatKey }) {
                 }}>
                   {m.photo && (
                     <img 
-                      src={m.photo.includes('ngrok-free.dev') ? m.photo.replace(/^https?:\/\/[^\/]+/, API) : m.photo} 
+                      src={m.photo.includes('ngrok-free.dev') ? m.photo.replace(/^https?:\/\/[^/]+/, API) : m.photo} 
                       alt="Msg Attach" 
                       style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '8px', display: 'block' }} 
                       onError={(e) => {
