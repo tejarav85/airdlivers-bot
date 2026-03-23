@@ -326,7 +326,8 @@ app.post("/api/chat/start", webAuth, async (req, res) => {
             // 🛡️ Proactively clear support notifications when they start the support chat
             await usersCol.updateOne({ _id: new ObjectId(userId) }, { $set: { unreadSupport: false } });
 
-            return res.json({ history: supportHistory, isMatched: false, activeService: "support" });
+            const history = (user?.chatHistory || []).filter(m => m.target === 'support');
+            return res.json({ history, isMatched: false, activeService: "support" });
         }
 
         let history = (user?.chatHistory || []).filter(m => m.target !== 'support');

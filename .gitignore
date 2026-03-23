@@ -3,3 +3,6 @@ node_modules/
 senders.json
 travelers.json
 .DS_Store
+airdlivers-web/node_modules/
+airdlivers-web/build/
+uploads/

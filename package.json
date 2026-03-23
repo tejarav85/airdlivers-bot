@@ -5,7 +5,8 @@
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
-    "dev": "nodemon bot.js"
+    "dev": "nodemon bot.js",
+    "build": "npm install && cd airdlivers-web && npm install && npm run build"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
