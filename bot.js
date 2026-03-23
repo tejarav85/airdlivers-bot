@@ -107,7 +107,7 @@ try {
 
 // ------------------- TELEGRAM BOT (webhook only) -------------------
 const bot = new TelegramBot(BOT_TOKEN, {
-    webHook: true
+    webHook: false
 });
 // 🔥 SAVE REAL TELEGRAM METHODS
 bot.__realSendMessage = bot.sendMessage.bind(bot);
