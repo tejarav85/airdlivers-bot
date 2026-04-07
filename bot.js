@@ -2804,6 +2804,10 @@ bot.on('message', async (msg) => {
         if (text.startsWith('/')) {
             console.log('[MESSAGE] command heard:', text, 'from', msg.chat.id);
         }
+
+        if (text.startsWith('/chatid')) {
+            return bot.sendMessage(chatId, `🆔 This Group ID: <code>${chatId}</code>`, { parse_mode: 'HTML' });
+        }
         const session = userSessions[chatId];
         const supportSession = supportSessions[chatId];
 
