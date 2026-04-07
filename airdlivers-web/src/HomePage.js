@@ -19,12 +19,21 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8 }}
                     >
-                        Fast, Secure International Delivery via Trusted Travelers
+                        AirDlivers
                     </motion.h1>
                     <motion.p
+                        className="hero-tagline"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ duration: 0.8, delay: 0.2 }}
+                        style={{ fontSize: '28px', fontWeight: '700', color: '#007bff', marginBottom: '10px' }}
+                    >
+                        Logistics Communication Platform
+                    </motion.p>
+                    <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.8, delay: 0.3 }}
                     >
                         Connect with airline passengers willing to carry your packages next-day, or travel and offset your ticket costs.
                     </motion.p>
