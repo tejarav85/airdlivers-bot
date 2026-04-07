@@ -2244,6 +2244,8 @@ bot.on('callback_query', async (query) => {
 
                     if (targetRole === 'support_member') {
                         await bot.sendMessage(chatId, "📊 Support Dashboard", { reply_markup: await getSupportDashboardMarkup() });
+                    } else if (targetRole === 'admin') {
+                        await bot.sendMessage(chatId, "🛠 <b>Admin Access Granted</b>\nYou can now use admin commands like /suspend, /admins, etc.", { parse_mode: 'HTML' });
                     }
                 } else {
                     auth.pinBuffer = "";
@@ -2829,51 +2831,57 @@ bot.on('message', async (msg) => {
         // Handle commands with possible bot name (e.g., /support@AirdliversBot)
         const cmd = text.split('@')[0].toLowerCase();
 
-        // /admin or /support
-        if (cmd === '/admin' || cmd === '/support' || cmd === '/support_dashboard') {
-            const sid = String(SUPPORT_GROUP_ID);
+        // Admin Commands Handler
+        const adminCmds = ['/admin', '/admins', '/addadmin', '/removeadmin', '/suspend', '/unsuspend', '/terminate', '/unterminate', '/whois'];
+        if (adminCmds.includes(cmd)) {
             const aid = String(ADMIN_GROUP_ID);
             const cid = String(chatId);
             
-            console.log(`[AUTH] Command: ${cmd}, chatId: ${cid}`);
+            if (cid !== aid) {
+                return bot.sendMessage(chatId, '🚫 This command can only be used in the <b>Admin Group</b>.', { parse_mode: 'HTML' });
+            }
 
-            // 🔍 Check persistent admin list
             const pAdmin = await adminsCol.findOne({ telegramId: String(fromId) });
             const isSuper = String(fromId) === String(SUPER_ADMIN_ID);
 
-            if (isSuper || pAdmin) {
+            if (isSuper || (pAdmin && pAdmin.role === 'admin')) {
+                const effectiveRole = isSuper ? 'admin' : 'admin';
+                adminAuth[fromId] = { loggedIn: true, role: effectiveRole, name: msg.from.first_name };
+                return bot.sendMessage(chatId, `✅ <b>Logged in as Admin</b> (Persistent Access)\nYou can now use all admin commands.`, { parse_mode: 'HTML' });
+            }
+
+            adminAuth[fromId] = { awaitingPin: true, targetRole: 'admin', pinBuffer: "" };
+            return bot.sendMessage(chatId, "🔐 <b>Admin Login Requested</b>\n\nUse the keypad below to enter your PIN.", { 
+                parse_mode: 'HTML', 
+                reply_markup: getPinPadMarkup("") 
+            });
+        }
+
+        // Support Commands Handler
+        if (cmd === '/support' || cmd === '/support_dashboard') {
+            const sid = String(SUPPORT_GROUP_ID);
+            const cid = String(chatId);
+
+            if (cid !== sid) {
+                return bot.sendMessage(chatId, '🚫 This command is for the <b>Support Group</b> only.', { parse_mode: 'HTML' });
+            }
+
+            const pAdmin = await adminsCol.findOne({ telegramId: String(fromId) });
+            const isSuper = String(fromId) === String(SUPER_ADMIN_ID);
+            
+            // Check if already logged in as support or higher
+            if (isSuper || (pAdmin && (pAdmin.role === 'admin' || pAdmin.role === 'support_member'))) {
                 const effectiveRole = isSuper ? 'admin' : pAdmin.role;
-                
-                // Allow login if role matches group context or is super
-                const canAdmin = (cid === aid && (effectiveRole === 'admin' || isSuper));
-                const canSupport = (cid === sid && (effectiveRole === 'support_member' || effectiveRole === 'admin' || isSuper));
-
-                if (canAdmin || canSupport) {
-                    adminAuth[fromId] = { loggedIn: true, role: effectiveRole, name: msg.from.first_name };
-                    await bot.sendMessage(chatId, `✅ <b>Logged in as ${effectiveRole}</b> (Persistent Access)`, { parse_mode: 'HTML' });
-                    if (canSupport || isSuper) {
-                         return bot.sendMessage(chatId, "📊 Support Dashboard", { reply_markup: await getSupportDashboardMarkup() });
-                    }
-                    return;
-                }
+                adminAuth[fromId] = { loggedIn: true, role: effectiveRole, name: msg.from.first_name };
+                await bot.sendMessage(chatId, `✅ <b>Access Verified</b> (${effectiveRole})`, { parse_mode: 'HTML' });
+                return bot.sendMessage(chatId, "📊 Support Dashboard", { reply_markup: await getSupportDashboardMarkup() });
             }
 
-            if (cid === aid) {
-                adminAuth[fromId] = { awaitingPin: true, targetRole: 'admin', pinBuffer: "" };
-                return bot.sendMessage(chatId, "🔐 <b>Admin Login Requested</b>\n\nUse the keypad below to enter your PIN.", { 
-                    parse_mode: 'HTML', 
-                    reply_markup: getPinPadMarkup("") 
-                });
-            }
-            if (cid === sid) {
-                adminAuth[fromId] = { awaitingPin: true, targetRole: 'support_member', pinBuffer: "" };
-                return bot.sendMessage(chatId, "🔐 <b>Support Admin Login Requested</b>\n\nUse the keypad below to enter your PIN.", { 
-                    parse_mode: 'HTML', 
-                    reply_markup: getPinPadMarkup("") 
-                });
-            }
-
-            return bot.sendMessage(chatId, '🚫 Not authorized in this group.');
+            adminAuth[fromId] = { awaitingPin: true, targetRole: 'support_member', pinBuffer: "" };
+            return bot.sendMessage(chatId, "🔐 <b>Support Admin Login Requested</b>\n\nUse the keypad below to enter your PIN.", { 
+                parse_mode: 'HTML', 
+                reply_markup: getPinPadMarkup("") 
+            });
         }
 
         // REMOVED TEXT-BASED PIN HANDLER FOR MAXIMUM SECURITY (USING INLINE PAD INSTEAD)
