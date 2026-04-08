@@ -30,7 +30,7 @@
   color: #ffffff;
   padding: 100px 20px;
   overflow: hidden;
-  background-image: url('/hero.png');
+  background-image: url('./hero.png');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
