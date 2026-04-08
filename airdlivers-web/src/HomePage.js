@@ -3,6 +3,23 @@ import { motion } from 'framer-motion';
 import { ClipboardEdit, UserCheck, MessageSquare, PackageCheck, ShieldCheck, Lock, FileWarning } from 'lucide-react';
 import './HomePage.css';
 
+const Typewriter = ({ text, delay }) => {
+    const [currentText, setCurrentText] = React.useState('');
+    const [currentIndex, setCurrentIndex] = React.useState(0);
+
+    React.useEffect(() => {
+        if (currentIndex < text.length) {
+            const timeout = setTimeout(() => {
+                setCurrentText(prevText => prevText + text[currentIndex]);
+                setCurrentIndex(prevIndex => prevIndex + 1);
+            }, delay);
+            return () => clearTimeout(timeout);
+        }
+    }, [currentIndex, delay, text]);
+
+    return <span>{currentText}</span>;
+};
+
 export default function HomePage({ token, openLogin, navigateTo }) {
     const handleServiceClick = (service) => {
         if (token) navigateTo(service);
@@ -14,59 +31,34 @@ export default function HomePage({ token, openLogin, navigateTo }) {
             {/* HERO SECTION */}
             <section className="hero">
                 <div className="hero-content">
-                    <motion.h1
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8 }}
-                    >
-                        AirDlivers
-                    </motion.h1>
                     <motion.p
                         className="hero-tagline"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 0.2 }}
-                        style={{ fontSize: '28px', fontWeight: '700', color: '#007bff', marginBottom: '10px' }}
                     >
-                        Logistics Communication Platform
-                    </motion.p>
-                    <motion.p
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.8, delay: 0.3 }}
-                    >
-                        Connect with airline passengers willing to carry your packages next-day, or travel and offset your ticket costs.
+                        Get benefited by sending and traveling.
                     </motion.p>
                     
-                    <motion.div 
-                        className="hero-image-container"
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.8, delay: 0.4 }}
-                        style={{ width: '100%', maxWidth: '800px', margin: '20px auto 40px auto' }}
+                    <motion.h1
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.5 }}
                     >
-                        <img 
-                            src="/hero.png" 
-                            alt="AirDlivers Smart Delivery" 
-                            style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
-                            onError={(e) => {
-                                // Fallback just in case they haven't put the image there yet
-                                e.target.style.display = 'none';
-                            }}
-                        />
-                    </motion.div>
+                        <Typewriter text="Airdlivers is a secure network hub and communication platform that connects airline travelers with senders to enable next-day international delivery possible worldwide." delay={30} />
+                    </motion.h1>
 
                     <motion.div 
                         className="hero-buttons"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, delay: 0.6 }}
+                        transition={{ duration: 0.8, delay: 4.5 }}
                     >
                         <button className="btn-primary" onClick={() => handleServiceClick('sender')}>
                             📦 Send Shipment
                         </button>
                         <button className="btn-secondary" onClick={() => handleServiceClick('traveler')}>
-                            🧳 Travel With Shipment
+                            🧳 Travel with Shipment
                         </button>
                     </motion.div>
                 </div>
@@ -157,7 +149,7 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                         <span style={{ color: '#007bff' }}>Air</span>
                         <span style={{ color: '#ffffff' }}>Dlivers</span>
                     </h3>
-                    <p>© {new Date().getFullYear()} AirDlivers. All rights reserved.</p>
+                    <p>© {new Date().getFullYear()} Airdlivers private Limited. All rights reserved.</p>
                 </div>
             </footer>
         </div>
