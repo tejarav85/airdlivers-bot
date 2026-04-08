@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import heroImage from './hero.png';
 import { motion } from 'framer-motion';
 import { ClipboardEdit, UserCheck, MessageSquare, PackageCheck, ShieldCheck, Lock, FileWarning } from 'lucide-react';
 import './HomePage.css';
 
 const Typewriter = ({ text, delay }) => {
-    const [currentText, setCurrentText] = React.useState('');
-    const [currentIndex, setCurrentIndex] = React.useState(0);
+    const [currentText, setCurrentText] = useState('');
+    const [currentIndex, setCurrentIndex] = useState(0);
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (currentIndex < text.length) {
             const timeout = setTimeout(() => {
                 setCurrentText(prevText => prevText + text[currentIndex]);
@@ -29,7 +30,7 @@ export default function HomePage({ token, openLogin, navigateTo }) {
     return (
         <div className="home-container">
             {/* HERO SECTION */}
-            <section className="hero">
+            <section className="hero" style={{ backgroundImage: `url(${heroImage})` }}>
                 <div className="hero-content">
                     <motion.p
                         className="hero-tagline"
