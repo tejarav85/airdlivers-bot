@@ -51,11 +51,12 @@ const BASE_URL = process.env.BASE_URL;   // ✅ FIRST CREATE THIS
 // ✅ ONLY AFTER BASE_URL EXISTS
 const PORT = process.env.PORT || 8080;
 const WEBHOOK_PATH = `/bot${BOT_TOKEN}`;
-const WEBHOOK_URL = `${BASE_URL}${WEBHOOK_PATH}`;
-
-console.log("BASE_URL =", BASE_URL);
-console.log("WEBHOOK_URL =", WEBHOOK_URL);
 if (!BOT_TOKEN) { console.error('FATAL: BOT_TOKEN missing'); process.exit(1); }
+if (!BASE_URL) { console.error('FATAL: BASE_URL missing'); process.exit(1); }
+const normalizedBaseUrl = BASE_URL.replace(/\/$/, "");
+const WEBHOOK_URL = `${normalizedBaseUrl}${WEBHOOK_PATH}`;
+console.log("BASE_URL =", normalizedBaseUrl);
+console.log("WEBHOOK_URL =", WEBHOOK_URL);
 if (!ADMIN_GROUP_ID) { console.error('FATAL: ADMIN_GROUP_ID missing'); process.exit(1); }
 if (!ADMIN_PIN) { console.error('FATAL: ADMIN_PIN missing'); process.exit(1); }
 if (!MONGO_URI) { console.error('FATAL: MONGO_URI missing'); process.exit(1); }
