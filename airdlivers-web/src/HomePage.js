@@ -42,12 +42,21 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                     </motion.p>
                     
                     <motion.h1
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.5 }}
                     >
-                        <Typewriter text="Airdlivers is a secure network hub and communication platform that connects airline travelers with senders to enable next-day international delivery possible worldwide." delay={30} />
+                        Secure <span className="highlight">Next-Day</span> International Delivery
                     </motion.h1>
+
+                    <motion.div
+                        className="hero-subtext"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.5, delay: 0.5 }}
+                    >
+                        <Typewriter text="Connecting travelers and senders for a faster, safer world." delay={40} />
+                    </motion.div>
 
                     <motion.div 
                         className="hero-buttons"

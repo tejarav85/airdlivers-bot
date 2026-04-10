@@ -67,6 +67,20 @@
   text-shadow: 0 2px 10px rgba(0,0,0,0.3);
 }
 
+.hero h1 .highlight {
+  color: #3b82f6; /* Premium Blue */
+  position: relative;
+}
+
+.hero-subtext {
+  font-size: 24px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 40px;
+  min-height: 36px; /* Prevent layout shift */
+  max-width: 700px;
+}
+
 .hero-tagline {
   font-family: inherit;
   text-transform: uppercase;
@@ -302,13 +316,13 @@
 /* RESPONSIVE QUERIES */
 @media (max-width: 1024px) {
   .hero h1 { font-size: 64px; }
-  .hero p { font-size: 20px; }
+  .hero-subtext { font-size: 20px; }
 }
 
 @media (max-width: 768px) {
   .hero { background-attachment: scroll; } /* Mobile fix for fixed bg */
   .hero h1 { font-size: 48px; letter-spacing: -1px; }
-  .hero p { font-size: 18px; }
+  .hero-subtext { font-size: 18px; max-width: 100%; }
   .hero-tagline { font-size: 16px !important; }
   .about-grid { grid-template-columns: 1fr; gap: 40px; }
 }
@@ -316,7 +330,7 @@
 @media (max-width: 480px) {
   .hero { padding: 80px 15px; }
   .hero h1 { font-size: 36px; }
-  .hero p { font-size: 16px; margin-bottom: 30px; }
+  .hero-subtext { font-size: 16px; margin-bottom: 30px; }
   .hero-buttons { flex-direction: column; width: 100%; gap: 15px; }
   .hero-buttons button { width: 100%; padding: 14px 24px; }
   .contact-links { flex-direction: column; width: 100%; max-width: 300px; margin: 0 auto; }
