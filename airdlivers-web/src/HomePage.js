@@ -32,15 +32,6 @@ export default function HomePage({ token, openLogin, navigateTo }) {
             {/* HERO SECTION */}
             <section className="hero" style={{ backgroundImage: `url(${heroImage})` }}>
                 <div className="hero-content">
-                    <motion.p
-                        className="hero-tagline"
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, delay: 0.2 }}
-                    >
-                        Get benefited by sending and traveling.
-                    </motion.p>
-                    
                     <motion.h1
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}

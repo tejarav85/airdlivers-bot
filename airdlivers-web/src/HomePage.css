@@ -30,10 +30,10 @@
   color: #ffffff;
   padding: 100px 20px;
   overflow: hidden;
-  background-image: url('./hero.png');
   background-size: cover;
-  background-position: center;
+  background-position: center 30%; /* Align to keep plane and characters visible */
   background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 .hero::before {
@@ -43,18 +43,27 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6); /* Slightly dark overlay */
+  background: linear-gradient(
+    to bottom,
+    rgba(17, 24, 39, 0.75), /* Dark blue overlay top */
+    rgba(17, 24, 39, 0.65)  /* Slightly lighter bottom */
+  );
   z-index: 1;
 }
 
 .hero-content {
   position: relative;
   z-index: 10;
-  max-width: 900px;
+  max-width: 1000px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px;
+  padding: 60px 40px;
+  background: rgba(17, 24, 39, 0.3); /* Subtle container background */
+  backdrop-filter: blur(8px); /* Glassmorphism effect */
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
 .hero h1 {
@@ -81,15 +90,6 @@
   max-width: 700px;
 }
 
-.hero-tagline {
-  font-family: inherit;
-  text-transform: uppercase;
-  letter-spacing: 3px;
-  font-size: 20px !important;
-  color: #3b82f6 !important; /* Premium Blue */
-  font-weight: 600 !important;
-  margin-bottom: 15px !important;
-}
 
 .hero p {
   font-size: 22px;
@@ -320,18 +320,19 @@
 }
 
 @media (max-width: 768px) {
-  .hero { background-attachment: scroll; } /* Mobile fix for fixed bg */
+  .hero { background-attachment: scroll; background-position: center 10%; } /* Mobile fix for fixed bg */
   .hero h1 { font-size: 48px; letter-spacing: -1px; }
   .hero-subtext { font-size: 18px; max-width: 100%; }
-  .hero-tagline { font-size: 16px !important; }
   .about-grid { grid-template-columns: 1fr; gap: 40px; }
+  .hero-content { padding: 40px 20px; border-radius: 16px; margin: 0 10px; }
 }
 
 @media (max-width: 480px) {
-  .hero { padding: 80px 15px; }
-  .hero h1 { font-size: 36px; }
-  .hero-subtext { font-size: 16px; margin-bottom: 30px; }
+  .hero { padding: 40px 10px; min-height: 80vh; }
+  .hero h1 { font-size: 32px; }
+  .hero-subtext { font-size: 15px; margin-bottom: 25px; }
   .hero-buttons { flex-direction: column; width: 100%; gap: 15px; }
   .hero-buttons button { width: 100%; padding: 14px 24px; }
   .contact-links { flex-direction: column; width: 100%; max-width: 300px; margin: 0 auto; }
+  .hero-content { padding: 30px 15px; }
 }
