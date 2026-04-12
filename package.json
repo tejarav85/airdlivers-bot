@@ -2,11 +2,14 @@
   "name": "airdlivers-bot",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
     "dev": "nodemon bot.js",
-    "build": "cd airdlivers-web && npm install && npm run build"
+    "build": "echo 'Starting Build...' && cd airdlivers-web && npm install --no-audit --no-fund --legacy-peer-deps && CI=false GENERATE_SOURCEMAP=false npm run build && echo 'Build Complete.'"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
