@@ -205,6 +205,15 @@
 }
 
 /* EMBEDDED TRUST METRICS STATS GRID */
+.section-header-centered {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.section-header-centered h2 {
+  margin-bottom: 10px;
+}
+
 .embedded-stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

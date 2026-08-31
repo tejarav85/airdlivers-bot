@@ -1047,39 +1047,23 @@ app.get("/api/reviews", async (req, res) => {
     }
 });
 
-app.post("/api/reviews/submit", async (req, res) => {
+app.post("/api/reviews/submit", webAuth, async (req, res) => {
     try {
         const { rating, comment, route, role, requestId } = req.body;
         if (!rating || !comment) {
             return res.status(400).json({ error: "Rating and comment are required" });
         }
 
-        let userId = null;
-        let userName = "Verified Customer";
-
-        // Extract user info if valid token provided
-        const authHeader = req.headers.authorization || "";
-        let token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
-        if (token === "null" || token === "undefined") token = null;
-
-        if (token) {
-            try {
-                const decoded = jwt.verify(token, JWT_SECRET);
-                if (decoded && decoded.id) {
-                    userId = decoded.id;
-                    const user = await usersCol.findOne({ _id: new ObjectId(userId) });
-                    if (user) {
-                        userName = user.name || user.email.split("@")[0];
-                    }
-                }
-            } catch (err) {
-                // Graceful fallback for expired/unverified token
-                console.log("Review submission with unverified token - saving as verified customer");
-            }
+        const userId = req.user.id;
+        const user = await usersCol.findOne({ _id: new ObjectId(userId) });
+        if (!user) {
+            return res.status(403).json({ error: "Registered user account required to leave a review" });
         }
 
+        const userName = user.name || user.email.split("@")[0];
+
         const doc = {
-            userId: userId || "user_" + Date.now(),
+            userId: userId,
             userName,
             role: role || "Sender",
             route: route || "Global Route",

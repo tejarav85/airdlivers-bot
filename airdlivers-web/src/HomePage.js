@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import heroImage from './hero.png';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
     ClipboardEdit, UserCheck, MessageSquare, PackageCheck, ShieldCheck, Lock, FileWarning, 
-    Star, CheckCircle2, Award, Globe, Users, TrendingUp, PenSquare, X 
+    Star, CheckCircle2, Award, Globe, Users, TrendingUp 
 } from 'lucide-react';
 import './HomePage.css';
 
@@ -35,16 +35,6 @@ export default function HomePage({ token, openLogin, navigateTo }) {
     const [reviews, setReviews] = useState([]);
     const [loadingReviews, setLoadingReviews] = useState(true);
 
-    // Modal state for submitting a review
-    const [showReviewModal, setShowReviewModal] = useState(false);
-    const [rating, setRating] = useState(5);
-    const [hoverRating, setHoverRating] = useState(0);
-    const [role, setRole] = useState("Sender");
-    const [route, setRoute] = useState("");
-    const [comment, setComment] = useState("");
-    const [submitting, setSubmitting] = useState(false);
-    const [submitMessage, setSubmitMessage] = useState({ type: "", text: "" });
-
     useEffect(() => {
         // Fetch Live Stats
         fetch('/api/stats')
@@ -71,57 +61,6 @@ export default function HomePage({ token, openLogin, navigateTo }) {
     const handleServiceClick = (service) => {
         if (token) navigateTo(service);
         else openLogin();
-    };
-
-    const handleOpenReviewModal = () => {
-        setSubmitMessage({ type: "", text: "" });
-        setShowReviewModal(true);
-    };
-
-    const handleSubmitReview = async (e) => {
-        e.preventDefault();
-        if (!comment.trim()) {
-            setSubmitMessage({ type: "error", text: "Please write a review comment." });
-            return;
-        }
-
-        setSubmitting(true);
-        setSubmitMessage({ type: "", text: "" });
-
-        try {
-            const authHeader = token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '';
-            const res = await fetch('/api/reviews/submit', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(authHeader ? { 'Authorization': authHeader } : {})
-                },
-                body: JSON.stringify({
-                    rating,
-                    role,
-                    route: route.trim() || 'Global Route',
-                    comment: comment.trim()
-                })
-            });
-
-            const data = await res.json();
-            if (data.success && data.review) {
-                setSubmitMessage({ type: "success", text: "Thank you! Your review has been published." });
-                setReviews(prev => [data.review, ...prev]);
-                setTimeout(() => {
-                    setShowReviewModal(false);
-                    setComment("");
-                    setRoute("");
-                    setRating(5);
-                }, 1500);
-            } else {
-                setSubmitMessage({ type: "error", text: data.error || "Failed to submit review." });
-            }
-        } catch (err) {
-            setSubmitMessage({ type: "error", text: "Network error. Please try again." });
-        } finally {
-            setSubmitting(false);
-        }
     };
 
     return (
@@ -232,41 +171,36 @@ export default function HomePage({ token, openLogin, navigateTo }) {
 
             {/* UNIFIED PROOF & REVIEWS SECTION: WHAT OUR CUSTOMERS SAY */}
             <section className="section reviews-section" id="reviews">
-                <div className="section-header-row">
-                    <div>
-                        <h2>What Our Customers Say</h2>
-                        <p className="section-subtitle">Proven track record and real experiences from verified senders and travelers globally.</p>
-                    </div>
-                    <button className="btn-write-review" onClick={handleOpenReviewModal}>
-                        <PenSquare size={18} /> Write a Review
-                    </button>
+                <div className="section-header-centered">
+                    <h2>What Our Customers Say</h2>
+                    <p className="section-subtitle">Real experiences and proven track record from verified senders and travelers globally.</p>
                 </div>
 
-                {/* EMBEDDED TRUST METRICS STATS GRID */}
+                {/* COMPACT TRUST METRICS STATS RIBBON */}
                 <div className="embedded-stats-grid">
                     <div className="stat-card">
-                        <div className="stat-icon-wrapper"><TrendingUp size={26} className="stat-icon" /></div>
+                        <div className="stat-icon-wrapper"><TrendingUp size={24} className="stat-icon" /></div>
                         <div className="stat-info">
                             <h3>{stats.deliveriesCount.toLocaleString()}+</h3>
                             <p>Successful Deliveries</p>
                         </div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-icon-wrapper"><Users size={26} className="stat-icon" /></div>
+                        <div className="stat-icon-wrapper"><Users size={24} className="stat-icon" /></div>
                         <div className="stat-info">
                             <h3>{stats.travelersCount.toLocaleString()}+</h3>
                             <p>Verified Travelers</p>
                         </div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-icon-wrapper"><Globe size={26} className="stat-icon" /></div>
+                        <div className="stat-icon-wrapper"><Globe size={24} className="stat-icon" /></div>
                         <div className="stat-info">
                             <h3>{stats.countriesCount}+</h3>
                             <p>Global Routes</p>
                         </div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-icon-wrapper"><Award size={26} className="stat-icon" /></div>
+                        <div className="stat-icon-wrapper"><Award size={24} className="stat-icon" /></div>
                         <div className="stat-info">
                             <h3>{stats.rating} / 5.0 ⭐</h3>
                             <p>Customer Satisfaction</p>
@@ -326,111 +260,6 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                     <a href="mailto:info@airdlivers.com" className="btn-outline">📧 info@airdlivers.com</a>
                 </div>
             </section>
-
-            {/* WRITE A REVIEW MODAL */}
-            <AnimatePresence>
-                {showReviewModal && (
-                    <motion.div 
-                        className="modal-overlay"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                    >
-                        <motion.div 
-                            className="review-modal"
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                        >
-                            <div className="modal-header">
-                                <h3>Write a Review</h3>
-                                <button className="btn-close-modal" onClick={() => setShowReviewModal(false)}>
-                                    <X size={20} />
-                                </button>
-                            </div>
-
-                            <form onSubmit={handleSubmitReview} className="review-form">
-                                <div className="form-group">
-                                    <label>Your Rating</label>
-                                    <div className="interactive-stars">
-                                        {[1, 2, 3, 4, 5].map((starVal) => (
-                                            <Star 
-                                                key={starVal}
-                                                size={28}
-                                                className="star-icon"
-                                                fill={(hoverRating || rating) >= starVal ? "#f59e0b" : "none"}
-                                                color={(hoverRating || rating) >= starVal ? "#f59e0b" : "#4b5563"}
-                                                onMouseEnter={() => setHoverRating(starVal)}
-                                                onMouseLeave={() => setHoverRating(0)}
-                                                onClick={() => setRating(starVal)}
-                                            />
-                                        ))}
-                                        <span className="rating-label">{hoverRating || rating} / 5 Stars</span>
-                                    </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Your Role</label>
-                                    <div className="role-selector">
-                                        <button 
-                                            type="button" 
-                                            className={`role-btn ${role === 'Sender' ? 'active' : ''}`}
-                                            onClick={() => setRole('Sender')}
-                                        >
-                                            📦 Sender
-                                        </button>
-                                        <button 
-                                            type="button" 
-                                            className={`role-btn ${role === 'Traveler' ? 'active' : ''}`}
-                                            onClick={() => setRole('Traveler')}
-                                        >
-                                            🧳 Traveler
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Delivery Route (Optional)</label>
-                                    <input 
-                                        type="text"
-                                        placeholder="e.g. London ✈️ Dubai"
-                                        value={route}
-                                        onChange={(e) => setRoute(e.target.value)}
-                                        className="form-input"
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Your Experience & Review *</label>
-                                    <textarea 
-                                        rows="4"
-                                        placeholder="Share how AirDlivers helped you send or travel with a package..."
-                                        value={comment}
-                                        onChange={(e) => setComment(e.target.value)}
-                                        required
-                                        className="form-textarea"
-                                    />
-                                </div>
-
-                                {submitMessage.text && (
-                                    <div className={`form-feedback ${submitMessage.type}`}>
-                                        {submitMessage.text}
-                                    </div>
-                                )}
-
-                                <div className="modal-actions">
-                                    <button type="button" className="btn-cancel" onClick={() => setShowReviewModal(false)}>
-                                        Cancel
-                                    </button>
-                                    <button type="submit" className="btn-submit-review" disabled={submitting}>
-                                        {submitting ? "Publishing..." : "Submit Review"}
-                                    </button>
-                                </div>
-                            </form>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
 
             {/* FOOTER */}
             <footer className="footer">
