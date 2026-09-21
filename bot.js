@@ -102,51 +102,6 @@ try {
     adminsCol = db.collection('admins');
     reviewsCol = db.collection('reviews');
     console.log('✅ MongoDB connected successfully');
-
-    // Seed initial reviews if collection is empty
-    const reviewCount = await reviewsCol.countDocuments();
-    if (reviewCount === 0) {
-        await reviewsCol.insertMany([
-            {
-                userName: "Sarah Jenkins",
-                role: "Sender",
-                route: "London ✈️ Dubai",
-                rating: 5,
-                comment: "Saved my life! Had urgent legal documents needed in Dubai within 24 hours. The traveler was extremely professional and delivered right on time.",
-                verified: true,
-                createdAt: new Date("2026-07-28T14:32:00Z")
-            },
-            {
-                userName: "Rahul Sharma",
-                role: "Traveler",
-                roleDetail: "Frequent Flyer",
-                route: "Delhi ✈️ Toronto",
-                rating: 5,
-                comment: "I travel to Toronto monthly. AirDlivers helped me cover 70% of my flight ticket cost by delivering a 4kg package safely. Smooth process!",
-                verified: true,
-                createdAt: new Date("2026-08-02T09:15:00Z")
-            },
-            {
-                userName: "Elena Rostova",
-                role: "Sender",
-                route: "New York ✈️ London",
-                rating: 5,
-                comment: "Sent fragile handcrafted gifts to family in London. Handover tracking and in-app chat were super secure and easy to use.",
-                verified: true,
-                createdAt: new Date("2026-08-10T18:45:00Z")
-            },
-            {
-                userName: "Marcus Vance",
-                role: "Traveler",
-                route: "Singapore ✈️ Sydney",
-                rating: 5,
-                comment: "Verification was thorough and fast. Met the sender at Changi airport, handed over at Sydney arrival. 10/10 experience!",
-                verified: true,
-                createdAt: new Date("2026-08-12T11:20:00Z")
-            }
-        ]);
-        console.log('✅ Seeded initial customer reviews');
-    }
 } catch (e) {
     console.error('MongoDB connection error:', e);
     process.exit(1);
@@ -1009,28 +964,40 @@ app.get("/api/stats", async (req, res) => {
         const completedTravelers = await travelersCol.countDocuments({
             $or: [{ status: "Completed" }, { status: "Delivered" }, { deliveryCompleted: true }]
         });
-        const verifiedTravelers = await travelersCol.countDocuments({});
-        const userCount = await usersCol.countDocuments({});
+        // Real completed deliveries count
+        const totalDeliveries = Math.max(completedSenders, completedTravelers);
 
-        // Calculate dynamic average rating from MongoDB reviews
+        const totalTravelers = await travelersCol.countDocuments({});
+        const totalUsers = await usersCol.countDocuments({});
+
+        // Calculate real distinct active routes / locations from DB
+        const senderPickups = await sendersCol.distinct("data.pickup");
+        const senderDests = await sendersCol.distinct("data.destination");
+        const travelerDeps = await travelersCol.distinct("data.departure");
+        const travelerDests = await travelersCol.distinct("data.destination");
+
+        const allRoutesSet = new Set([
+            ...senderPickups.filter(Boolean),
+            ...senderDests.filter(Boolean),
+            ...travelerDeps.filter(Boolean),
+            ...travelerDests.filter(Boolean)
+        ]);
+        const activeRoutesCount = allRoutesSet.size;
+
+        // Calculate dynamic real average rating from genuine MongoDB reviews
         const allReviews = await reviewsCol.find({}).toArray();
-        let avgRating = 4.9;
+        let avgRating = "0.0";
         if (allReviews.length > 0) {
             const sum = allReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
             avgRating = (sum / allReviews.length).toFixed(1);
         }
-
-        // Baseline stats + real dynamic DB counts
-        const totalDeliveries = 1240 + completedSenders + completedTravelers;
-        const totalTravelers = 450 + verifiedTravelers;
-        const totalUsers = 1800 + userCount;
 
         res.json({
             success: true,
             deliveriesCount: totalDeliveries,
             travelersCount: totalTravelers,
             usersCount: totalUsers,
-            countriesCount: 38,
+            countriesCount: activeRoutesCount,
             rating: avgRating
         });
     } catch (e) {

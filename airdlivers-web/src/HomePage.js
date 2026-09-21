@@ -278,7 +278,9 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                         {activeTab === 'deliveries' && (
                             <div className="panel-content-card">
                                 <div className="panel-stat-header">
-                                    <div className="panel-big-number">{stats.deliveriesCount.toLocaleString()}+</div>
+                                    <div className="panel-big-number">
+                                        {stats.deliveriesCount > 0 ? `${stats.deliveriesCount.toLocaleString()}+` : "0"}
+                                    </div>
                                     <div className="panel-stat-details">
                                         <h3>Successful Next-Day Deliveries</h3>
                                         <p>Packages hand-carried safely by verified international travelers directly from sender to recipient.</p>
@@ -304,10 +306,12 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                         {activeTab === 'routes' && (
                             <div className="panel-content-card">
                                 <div className="panel-stat-header">
-                                    <div className="panel-big-number">{stats.countriesCount}+</div>
+                                    <div className="panel-big-number">
+                                        {stats.countriesCount > 0 ? `${stats.countriesCount}+` : "0"}
+                                    </div>
                                     <div className="panel-stat-details">
                                         <h3>Global Active Flight Routes & Corridors</h3>
-                                        <p>Connecting senders and frequent travelers across top international flight hubs worldwide.</p>
+                                        <p>Connecting senders and frequent travelers across international flight hubs worldwide.</p>
                                     </div>
                                 </div>
                                 <div className="panel-routes-tags">
@@ -324,29 +328,35 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                         {activeTab === 'satisfaction' && (
                             <div className="panel-content-card">
                                 <div className="panel-stat-header">
-                                    <div className="panel-big-number">{stats.rating} / 5.0 ⭐</div>
+                                    <div className="panel-big-number">
+                                        {stats.rating !== "0.0" ? `${stats.rating} / 5.0 ⭐` : "0.0 ⭐"}
+                                    </div>
                                     <div className="panel-stat-details">
                                         <h3>Customer Satisfaction Rating</h3>
                                         <p>Calculated average from post-delivery feedback left by confirmed senders and travelers.</p>
                                     </div>
                                 </div>
-                                <div className="panel-rating-bars">
-                                    <div className="panel-bar-row">
-                                        <span>5 Stars ⭐⭐⭐⭐⭐</span>
-                                        <div className="bar-track"><div className="bar-fill" style={{ width: '94%' }}></div></div>
-                                        <span>94%</span>
+                                {stats.rating !== "0.0" ? (
+                                    <div className="panel-rating-bars">
+                                        <div className="panel-bar-row">
+                                            <span>5 Stars ⭐⭐⭐⭐⭐</span>
+                                            <div className="bar-track"><div className="bar-fill" style={{ width: '94%' }}></div></div>
+                                            <span>94%</span>
+                                        </div>
+                                        <div className="panel-bar-row">
+                                            <span>4 Stars ⭐⭐⭐⭐</span>
+                                            <div className="bar-track"><div className="bar-fill" style={{ width: '5%' }}></div></div>
+                                            <span>5%</span>
+                                        </div>
+                                        <div className="panel-bar-row">
+                                            <span>3 Stars ⭐⭐⭐</span>
+                                            <div className="bar-track"><div className="bar-fill" style={{ width: '1%' }}></div></div>
+                                            <span>1%</span>
+                                        </div>
                                     </div>
-                                    <div className="panel-bar-row">
-                                        <span>4 Stars ⭐⭐⭐⭐</span>
-                                        <div className="bar-track"><div className="bar-fill" style={{ width: '5%' }}></div></div>
-                                        <span>5%</span>
-                                    </div>
-                                    <div className="panel-bar-row">
-                                        <span>3 Stars ⭐⭐⭐</span>
-                                        <div className="bar-track"><div className="bar-fill" style={{ width: '1%' }}></div></div>
-                                        <span>1%</span>
-                                    </div>
-                                </div>
+                                ) : (
+                                    <p style={{ color: '#64748b', fontStyle: 'italic' }}>No completed delivery reviews yet.</p>
+                                )}
                             </div>
                         )}
 
