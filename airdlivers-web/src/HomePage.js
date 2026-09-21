@@ -315,12 +315,13 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                                     </div>
                                 </div>
                                 <div className="panel-routes-tags">
-                                    <span className="route-tag-chip">✈️ New York (JFK) ➔ London (LHR)</span>
-                                    <span className="route-tag-chip">✈️ Toronto (YYZ) ➔ Delhi (DEL)</span>
-                                    <span className="route-tag-chip">✈️ Dubai (DXB) ➔ Mumbai (BOM)</span>
-                                    <span className="route-tag-chip">✈️ San Francisco (SFO) ➔ Frankfurt (FRA)</span>
-                                    <span className="route-tag-chip">✈️ Sydney (SYD) ➔ Singapore (SIN)</span>
-                                    <span className="route-tag-chip">✈️ Chicago (ORD) ➔ Hyderabad (HYD)</span>
+                                    {stats.routesList && stats.routesList.length > 0 ? (
+                                        stats.routesList.map((loc, idx) => (
+                                            <span className="route-tag-chip" key={idx}>✈️ {loc}</span>
+                                        ))
+                                    ) : (
+                                        <p style={{ color: '#64748b', fontStyle: 'italic' }}>No active routes recorded yet.</p>
+                                    )}
                                 </div>
                             </div>
                         )}

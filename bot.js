@@ -983,6 +983,7 @@ app.get("/api/stats", async (req, res) => {
             ...travelerDests.filter(Boolean)
         ]);
         const activeRoutesCount = allRoutesSet.size;
+        const activeRoutesList = Array.from(allRoutesSet);
 
         // Calculate dynamic real average rating from genuine MongoDB reviews
         const allReviews = await reviewsCol.find({}).toArray();
@@ -998,6 +999,7 @@ app.get("/api/stats", async (req, res) => {
             travelersCount: totalTravelers,
             usersCount: totalUsers,
             countriesCount: activeRoutesCount,
+            routesList: activeRoutesList,
             rating: avgRating
         });
     } catch (e) {
