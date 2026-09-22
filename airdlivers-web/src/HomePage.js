@@ -326,40 +326,65 @@ export default function HomePage({ token, openLogin, navigateTo }) {
                             </div>
                         )}
 
-                        {activeTab === 'satisfaction' && (
-                            <div className="panel-content-card">
-                                <div className="panel-stat-header">
-                                    <div className="panel-big-number">
-                                        {stats.rating !== "0.0" ? `${stats.rating} / 5.0 ⭐` : "0.0 ⭐"}
+                        {activeTab === 'satisfaction' && (() => {
+                            const totalRev = reviews.length;
+                            const c5 = reviews.filter(r => Number(r.rating) === 5).length;
+                            const c4 = reviews.filter(r => Number(r.rating) === 4).length;
+                            const c3 = reviews.filter(r => Number(r.rating) === 3).length;
+                            const c2 = reviews.filter(r => Number(r.rating) === 2).length;
+                            const c1 = reviews.filter(r => Number(r.rating) === 1).length;
+
+                            const p5 = totalRev > 0 ? Math.round((c5 / totalRev) * 100) : 0;
+                            const p4 = totalRev > 0 ? Math.round((c4 / totalRev) * 100) : 0;
+                            const p3 = totalRev > 0 ? Math.round((c3 / totalRev) * 100) : 0;
+                            const p2 = totalRev > 0 ? Math.round((c2 / totalRev) * 100) : 0;
+                            const p1 = totalRev > 0 ? Math.round((c1 / totalRev) * 100) : 0;
+
+                            return (
+                                <div className="panel-content-card">
+                                    <div className="panel-stat-header">
+                                        <div className="panel-big-number">
+                                            {stats.rating !== "0.0" ? `${stats.rating} / 5.0 ⭐` : "0.0 ⭐"}
+                                        </div>
+                                        <div className="panel-stat-details">
+                                            <h3>Customer Satisfaction Rating</h3>
+                                            <p>Calculated average from post-delivery feedback left by confirmed senders and travelers ({totalRev} {totalRev === 1 ? 'review' : 'reviews'}).</p>
+                                        </div>
                                     </div>
-                                    <div className="panel-stat-details">
-                                        <h3>Customer Satisfaction Rating</h3>
-                                        <p>Calculated average from post-delivery feedback left by confirmed senders and travelers.</p>
-                                    </div>
+                                    {totalRev > 0 ? (
+                                        <div className="panel-rating-bars">
+                                            <div className="panel-bar-row">
+                                                <span>5 Stars ⭐⭐⭐⭐⭐</span>
+                                                <div className="bar-track"><div className="bar-fill" style={{ width: `${p5}%` }}></div></div>
+                                                <span>{p5}%</span>
+                                            </div>
+                                            <div className="panel-bar-row">
+                                                <span>4 Stars ⭐⭐⭐⭐</span>
+                                                <div className="bar-track"><div className="bar-fill" style={{ width: `${p4}%` }}></div></div>
+                                                <span>{p4}%</span>
+                                            </div>
+                                            <div className="panel-bar-row">
+                                                <span>3 Stars ⭐⭐⭐</span>
+                                                <div className="bar-track"><div className="bar-fill" style={{ width: `${p3}%` }}></div></div>
+                                                <span>{p3}%</span>
+                                            </div>
+                                            <div className="panel-bar-row">
+                                                <span>2 Stars ⭐⭐</span>
+                                                <div className="bar-track"><div className="bar-fill" style={{ width: `${p2}%` }}></div></div>
+                                                <span>{p2}%</span>
+                                            </div>
+                                            <div className="panel-bar-row">
+                                                <span>1 Star ⭐</span>
+                                                <div className="bar-track"><div className="bar-fill" style={{ width: `${p1}%` }}></div></div>
+                                                <span>{p1}%</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p style={{ color: '#64748b', fontStyle: 'italic' }}>No completed delivery reviews yet.</p>
+                                    )}
                                 </div>
-                                {stats.rating !== "0.0" ? (
-                                    <div className="panel-rating-bars">
-                                        <div className="panel-bar-row">
-                                            <span>5 Stars ⭐⭐⭐⭐⭐</span>
-                                            <div className="bar-track"><div className="bar-fill" style={{ width: '94%' }}></div></div>
-                                            <span>94%</span>
-                                        </div>
-                                        <div className="panel-bar-row">
-                                            <span>4 Stars ⭐⭐⭐⭐</span>
-                                            <div className="bar-track"><div className="bar-fill" style={{ width: '5%' }}></div></div>
-                                            <span>5%</span>
-                                        </div>
-                                        <div className="panel-bar-row">
-                                            <span>3 Stars ⭐⭐⭐</span>
-                                            <div className="bar-track"><div className="bar-fill" style={{ width: '1%' }}></div></div>
-                                            <span>1%</span>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <p style={{ color: '#64748b', fontStyle: 'italic' }}>No completed delivery reviews yet.</p>
-                                )}
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {activeTab === 'reviews' && (
                             <div className="panel-content-card">
